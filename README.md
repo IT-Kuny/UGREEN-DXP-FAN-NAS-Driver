@@ -215,14 +215,18 @@ sudo systemctl start fancontrol
 ### DXP4800 — fan visibility works but pwmconfig finds no controllable channels
 
 On the DXP4800 the IT8613E chip starts up with **pwm2 and pwm3 already in
-hardware automatic mode**.  When `pwmconfig` asks:
+hardware automatic mode**.
+
+When `pwmconfig` asks:
 
 ```
 Would you like to generate a detailed correlation table? (y/n)
 ```
 
-and later offers to switch pwm2/pwm3 from automatic to manual control,
-**answer yes** and let `pwmconfig` take them over.  pwm4 and pwm5 are
+select **n** (the detailed table is optional and can take longer).
+
+When `pwmconfig` later offers to switch pwm2/pwm3 from automatic to manual
+control, select **y** and let `pwmconfig` take them over. pwm4 and pwm5 are
 not wired to the fans on this model; pwm2/pwm3 are the correct channels.
 
 After `pwmconfig` finishes, verify that the fans respond by watching
