@@ -338,7 +338,7 @@ Core 3:        +49.0°C  (high = +105.0°C, crit = +105.0°C)
 
 # Bugs
 
-Please report them here.
+Please report them [here](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues).
 
 ## Donations
 
