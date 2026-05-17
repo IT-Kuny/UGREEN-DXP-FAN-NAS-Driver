@@ -18,6 +18,7 @@ Whats currenttly being supported:
 Whats currently being partially supported: 
 
 - DXP6800Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/6) #6 for now)
+- DXP4800 (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/11) #11 for now — fan visibility works, active PWM control requires additional setup)
 
 ---
 
@@ -210,6 +211,43 @@ sudo systemctl stop fancontrol
 sudo pwmconfig
 sudo systemctl start fancontrol
 ```
+
+### DXP4800 — fan visibility works but pwmconfig finds no controllable channels
+
+On the DXP4800 the IT8613E chip starts up with **pwm2 and pwm3 already in
+hardware automatic mode**.
+
+When `pwmconfig` asks:
+
+```
+Would you like to generate a detailed correlation table? (y/n)
+```
+
+select **n** (the detailed table is optional and can take longer).
+
+When `pwmconfig` later offers to switch pwm2/pwm3 from automatic to manual
+control, select **y** and let `pwmconfig` take them over. pwm4 and pwm5 are
+not wired to the fans on this model; pwm2/pwm3 are the correct channels.
+
+After `pwmconfig` finishes, verify that the fans respond by watching
+`sensors` output while the service is running:
+
+```bash
+sudo systemctl start fancontrol
+watch -n 2 sensors
+```
+
+If the fan RPM values change as expected, enable the service permanently:
+
+```bash
+sudo systemctl enable --now fancontrol
+```
+
+> [!NOTE]
+> Unlike the DXP2800 (where fans idle at 0 RPM between `pwmconfig` tests),
+> the DXP4800 fans continue spinning under hardware control during the
+> correlation test.  The correct strategy is to **accept** the offer to
+> switch pwm2/pwm3 to manual mode so that `fancontrol` can manage them.
 
 ### DKMS module fails to build after kernel update
 
