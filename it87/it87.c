@@ -1617,7 +1617,7 @@ static ssize_t set_pwm_enable(struct device *dev, struct device_attribute *attr,
 				 * manual mode (val=1), reset duty to ~50% so that
 				 * pwm_mode() correctly reports manual mode. Without
 				 * this, pwmconfig reports "Manual control mode not
-				 * supported" because the duty-==max check in
+				 * supported" because the duty==max check in
 				 * pwm_mode() shadows the manual-mode bit.
 				 * (Fixes IT8613E on UGREEN DXP NAS devices.)
 				 */
