@@ -17,6 +17,7 @@
  *            IT8622E  Super I/O chip w/LPC interface
  *            IT8623E  Super I/O chip w/LPC interface
  *            IT8628E  Super I/O chip w/LPC interface
+ *            IT8689E  Super I/O chip w/LPC interface
  *            IT8705F  Super I/O chip w/LPC interface
  *            IT8712F  Super I/O chip w/LPC interface
  *            IT8716F  Super I/O chip w/LPC interface
@@ -65,7 +66,7 @@
 
 enum chips { it87, it8712, it8716, it8718, it8720, it8721, it8728, it8732,
 	     it8771, it8772, it8781, it8782, it8783, it8786, it8790,
-	     it8792, it8603, it8613, it8620, it8622, it8628, it87952 };
+	     it8792, it8603, it8613, it8620, it8622, it8628, it8689, it87952 };
 
 static struct platform_device *it87_pdev[2];
 
@@ -164,6 +165,7 @@ static inline void superio_exit(int ioreg, bool noexit)
 #define IT8622E_DEVID 0x8622
 #define IT8623E_DEVID 0x8623
 #define IT8628E_DEVID 0x8628
+#define IT8689E_DEVID 0x8689
 #define IT87952E_DEVID 0x8695
 
 /* Logical device 4 (Environmental Monitor) registers */
@@ -524,6 +526,15 @@ static const struct it87_devices it87_devices[] = {
 		  | FEAT_IN7_INTERNAL | FEAT_SIX_PWM | FEAT_PWM_FREQ2
 		  | FEAT_SIX_TEMP | FEAT_VIN3_5V | FEAT_FANCTL_ONOFF,
 		.peci_mask = 0x07,
+	},
+	[it8689] = {
+		.name = "it8689",
+		.model = "IT8689E",
+		.features = FEAT_NEWER_AUTOPWM | FEAT_12MV_ADC | FEAT_16BIT_FANS
+		  | FEAT_TEMP_OFFSET | FEAT_SIX_FANS | FEAT_IN7_INTERNAL
+		  | FEAT_SIX_PWM | FEAT_PWM_FREQ2 | FEAT_SIX_TEMP | FEAT_AVCC3
+		  | FEAT_FANCTL_ONOFF,
+		.smbus_bitmap = BIT(1) | BIT(2),
 	},
 	[it87952] = {
 		.name = "it87952",
@@ -1027,7 +1038,7 @@ static ssize_t show_in(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%d\n", in_from_reg(data, nr, data->in[nr][index]));
+	return sysfs_emit(buf, "%d\n", in_from_reg(data, nr, data->in[nr][index]));
 }
 
 static ssize_t set_in(struct device *dev, struct device_attribute *attr,
@@ -1122,7 +1133,7 @@ static ssize_t show_temp(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%d\n", TEMP_FROM_REG(data->temp[nr][index]));
+	return sysfs_emit(buf, "%d\n", TEMP_FROM_REG(data->temp[nr][index]));
 }
 
 static ssize_t set_temp(struct device *dev, struct device_attribute *attr,
@@ -1252,7 +1263,7 @@ static ssize_t show_temp_type(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%d\n", get_temp_type(data, sensor_attr->index));
+	return sysfs_emit(buf, "%d\n", get_temp_type(data, sensor_attr->index));
 }
 
 static ssize_t set_temp_type(struct device *dev, struct device_attribute *attr,
@@ -1350,7 +1361,7 @@ static ssize_t show_fan(struct device *dev, struct device_attribute *attr,
 		FAN16_FROM_REG(data->fan[nr][index]) :
 		FAN_FROM_REG(data->fan[nr][index],
 			     DIV_FROM_REG(data->fan_div[nr]));
-	return sprintf(buf, "%d\n", speed);
+	return sysfs_emit(buf, "%d\n", speed);
 }
 
 static ssize_t show_fan_div(struct device *dev, struct device_attribute *attr,
@@ -1363,7 +1374,7 @@ static ssize_t show_fan_div(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%lu\n", DIV_FROM_REG(data->fan_div[nr]));
+	return sysfs_emit(buf, "%lu\n", DIV_FROM_REG(data->fan_div[nr]));
 }
 
 static ssize_t show_pwm_enable(struct device *dev,
@@ -1376,7 +1387,7 @@ static ssize_t show_pwm_enable(struct device *dev,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%d\n", pwm_mode(data, nr));
+	return sysfs_emit(buf, "%d\n", pwm_mode(data, nr));
 }
 
 static ssize_t show_pwm(struct device *dev, struct device_attribute *attr,
@@ -1389,7 +1400,7 @@ static ssize_t show_pwm(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%d\n",
+	return sysfs_emit(buf, "%d\n",
 		       pwm_from_reg(data, data->pwm_duty[nr]));
 }
 
@@ -1412,7 +1423,7 @@ static ssize_t show_pwm_freq(struct device *dev, struct device_attribute *attr,
 
 	freq = pwm_freq[index] / (has_newer_autopwm(data) ? 256 : 128);
 
-	return sprintf(buf, "%u\n", freq);
+	return sysfs_emit(buf, "%u\n", freq);
 }
 
 static ssize_t set_fan(struct device *dev, struct device_attribute *attr,
@@ -1596,8 +1607,24 @@ static ssize_t set_pwm_enable(struct device *dev, struct device_attribute *attr,
 		if (has_newer_autopwm(data)) {
 			ctrl = (data->pwm_ctrl[nr] & 0x7c) |
 				data->pwm_temp_map[nr];
-			if (val != 1)
+			if (val != 1) {
 				ctrl |= 0x80;
+			} else if (!has_fanctl_onoff(data) &&
+				   data->pwm_duty[nr] == pwm_to_reg(data, 0xff)) {
+				/*
+				 * Chips without FAN_CTL ON/OFF use duty==max to
+				 * represent "full speed" mode. When switching to
+				 * manual mode (val=1), reset duty to ~50% so that
+				 * pwm_mode() correctly reports manual mode. Without
+				 * this, pwmconfig reports "Manual control mode not
+				 * supported" because the duty-==max check in
+				 * pwm_mode() shadows the manual-mode bit.
+				 * (Fixes IT8613E on UGREEN DXP NAS devices.)
+				 */
+				data->pwm_duty[nr] = 0x7f;
+				it87_write_value(data, IT87_REG_PWM_DUTY[nr],
+						 data->pwm_duty[nr]);
+			}
 		} else {
 			ctrl = (val == 1 ? data->pwm_duty[nr] : 0x80);
 		}
@@ -1719,7 +1746,7 @@ static ssize_t show_pwm_temp_map(struct device *dev,
 	if (nr >= 3)		/* pwm channels 3..6 map to temp4..6 */
 		map += 3;
 
-	return sprintf(buf, "%d\n", (int)BIT(map));
+	return sysfs_emit(buf, "%d\n", (int)BIT(map));
 }
 
 static ssize_t set_pwm_temp_map(struct device *dev,
@@ -1784,7 +1811,7 @@ static ssize_t show_auto_pwm(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%d\n",
+	return sysfs_emit(buf, "%d\n",
 		       pwm_from_reg(data, data->auto_pwm[nr][point]));
 }
 
@@ -1827,7 +1854,7 @@ static ssize_t show_auto_pwm_slope(struct device *dev,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%d\n", data->auto_pwm[nr][1] & 0x7f);
+	return sysfs_emit(buf, "%d\n", data->auto_pwm[nr][1] & 0x7f);
 }
 
 static ssize_t set_auto_pwm_slope(struct device *dev,
@@ -1872,7 +1899,7 @@ static ssize_t show_auto_temp(struct device *dev, struct device_attribute *attr,
 	else
 		reg = data->auto_temp[nr][1] - (data->auto_temp[nr][0] & 0x1f);
 
-	return sprintf(buf, "%d\n", TEMP_FROM_REG(reg));
+	return sysfs_emit(buf, "%d\n", TEMP_FROM_REG(reg));
 }
 
 static ssize_t set_auto_temp(struct device *dev, struct device_attribute *attr,
@@ -2094,7 +2121,7 @@ static ssize_t alarms_show(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%u\n", data->alarms);
+	return sysfs_emit(buf, "%u\n", data->alarms);
 }
 static DEVICE_ATTR_RO(alarms);
 
@@ -2107,7 +2134,7 @@ static ssize_t show_alarm(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%u\n", (data->alarms >> bitnr) & 1);
+	return sysfs_emit(buf, "%u\n", (data->alarms >> bitnr) & 1);
 }
 
 static ssize_t clear_intrusion(struct device *dev,
@@ -2167,7 +2194,7 @@ static ssize_t show_beep(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%u\n", (data->beeps >> bitnr) & 1);
+	return sysfs_emit(buf, "%u\n", (data->beeps >> bitnr) & 1);
 }
 
 static ssize_t set_beep(struct device *dev, struct device_attribute *attr,
@@ -2221,7 +2248,7 @@ static ssize_t vrm_show(struct device *dev, struct device_attribute *attr,
 {
 	struct it87_data *data = dev_get_drvdata(dev);
 
-	return sprintf(buf, "%u\n", data->vrm);
+	return sysfs_emit(buf, "%u\n", data->vrm);
 }
 
 static ssize_t vrm_store(struct device *dev, struct device_attribute *attr,
@@ -2247,7 +2274,7 @@ static ssize_t cpu0_vid_show(struct device *dev,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
-	return sprintf(buf, "%ld\n", (long)vid_from_reg(data->vid, data->vrm));
+	return sysfs_emit(buf, "%ld\n", (long)vid_from_reg(data->vid, data->vrm));
 }
 static DEVICE_ATTR_RO(cpu0_vid);
 
@@ -2277,7 +2304,7 @@ static ssize_t show_label(struct device *dev, struct device_attribute *attr,
 	else
 		label = labels[nr];
 
-	return sprintf(buf, "%s\n", label);
+	return sysfs_emit(buf, "%s\n", label);
 }
 static SENSOR_DEVICE_ATTR(in3_label, S_IRUGO, show_label, NULL, 0);
 static SENSOR_DEVICE_ATTR(in7_label, S_IRUGO, show_label, NULL, 1);
@@ -2817,6 +2844,9 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 	case IT8628E_DEVID:
 		sio_data->type = it8628;
 		break;
+	case IT8689E_DEVID:
+		sio_data->type = it8689;
+		break;
 	case IT87952E_DEVID:
 		sio_data->type = it87952;
 		break;
@@ -3068,6 +3098,51 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 			sio_data->internal |= BIT(0);
 		else
 			sio_data->skip_in |= BIT(9);
+
+		sio_data->beep_pin = superio_inb(sioaddr,
+						 IT87_SIO_BEEP_PIN_REG) & 0x3f;
+	} else if (sio_data->type == it8689) {
+		int reg;
+
+		superio_select(sioaddr, GPIO);
+
+		/* Check for pwm5 */
+		reg = superio_inb(sioaddr, IT87_SIO_GPIO1_REG);
+		if (reg & BIT(6))
+			sio_data->skip_pwm |= BIT(4);
+
+		/* Check for fan4, fan5 */
+		reg = superio_inb(sioaddr, IT87_SIO_GPIO2_REG);
+		if (!(reg & BIT(5)))
+			sio_data->skip_fan |= BIT(3);
+		if (!(reg & BIT(4)))
+			sio_data->skip_fan |= BIT(4);
+
+		/* Check for pwm3, fan3 */
+		reg = superio_inb(sioaddr, IT87_SIO_GPIO3_REG);
+		if (reg & BIT(6))
+			sio_data->skip_pwm |= BIT(2);
+		if (reg & BIT(7))
+			sio_data->skip_fan |= BIT(2);
+
+		/* Check for pwm4 */
+		reg = superio_inb(sioaddr, IT87_SIO_GPIO4_REG);
+		if (reg & BIT(2))
+			sio_data->skip_pwm |= BIT(3);
+
+		/* Check for pwm2, fan2 */
+		reg = superio_inb(sioaddr, IT87_SIO_GPIO5_REG);
+		if (reg & BIT(1))
+			sio_data->skip_pwm |= BIT(1);
+		if (reg & BIT(2))
+			sio_data->skip_fan |= BIT(1);
+		/* Check for pwm6, fan6 */
+		if (!(reg & BIT(7))) {
+			sio_data->skip_pwm |= BIT(5);
+			sio_data->skip_fan |= BIT(5);
+		}
+
+		/* in9 (AVCC3) is always internal, no PINX2 check needed */
 
 		sio_data->beep_pin = superio_inb(sioaddr,
 						 IT87_SIO_BEEP_PIN_REG) & 0x3f;

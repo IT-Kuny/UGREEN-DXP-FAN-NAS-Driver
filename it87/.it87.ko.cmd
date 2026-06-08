@@ -1,0 +1,1 @@
+savedcmd_it87.ko := ld -r -m elf_x86_64 -z noexecstack --no-warn-rwx-segments --build-id=sha1  -T /usr/src/linux-headers-6.17.0-1015-azure/scripts/module.lds -o it87.ko it87.o it87.mod.o .module-common.o
