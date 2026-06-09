@@ -20,7 +20,7 @@ static const struct modversion_info ____versions[]
 __used __section("__versions") = {
 	{ 0xbd069841, "kstrtoull" },
 	{ 0xd272d446, "__stack_chk_fail" },
-	{ 0xdd6830c7, "sprintf" },
+	{ 0xdd6830c7, "sysfs_emit" },
 	{ 0x90a48d82, "__ubsan_handle_out_of_bounds" },
 	{ 0xe4de56b4, "__ubsan_handle_load_invalid_value" },
 	{ 0x466fce9d, "__platform_driver_register" },
@@ -33,8 +33,8 @@ __used __section("__versions") = {
 	{ 0x9ce4928f, "platform_device_add_resources" },
 	{ 0x97892e17, "platform_device_add_data" },
 	{ 0xf0649c75, "platform_device_add" },
-	{ 0x8038d9f4, "platform_device_put" },
 	{ 0x23f25c0a, "__dynamic_pr_debug" },
+	{ 0x8038d9f4, "platform_device_put" },
 	{ 0xeb2f2059, "pv_ops" },
 	{ 0xd272d446, "BUG_func" },
 	{ 0x1f55c5b2, "kstrtoll" },
@@ -82,8 +82,8 @@ __used __section("__version_ext_crcs") = {
 	0x9ce4928f,
 	0x97892e17,
 	0xf0649c75,
-	0x8038d9f4,
 	0x23f25c0a,
+	0x8038d9f4,
 	0xeb2f2059,
 	0xd272d446,
 	0x1f55c5b2,
@@ -117,7 +117,7 @@ static const char ____version_ext_names[]
 __used __section("__version_ext_names") =
 	"kstrtoull\0"
 	"__stack_chk_fail\0"
-	"sprintf\0"
+	"sysfs_emit\0"
 	"__ubsan_handle_out_of_bounds\0"
 	"__ubsan_handle_load_invalid_value\0"
 	"__platform_driver_register\0"
@@ -130,8 +130,8 @@ __used __section("__version_ext_names") =
 	"platform_device_add_resources\0"
 	"platform_device_add_data\0"
 	"platform_device_add\0"
-	"platform_device_put\0"
 	"__dynamic_pr_debug\0"
+	"platform_device_put\0"
 	"pv_ops\0"
 	"BUG_func\0"
 	"kstrtoll\0"
@@ -166,4 +166,4 @@ MODULE_INFO(depends, "hwmon-vid");
 
 MODULE_ALIAS("dmi*:rvn*nVIDIA*:rn*FN68PT*:");
 
-MODULE_INFO(srcversion, "8014EBA4E09FC4CA652C32C");
+MODULE_INFO(srcversion, "E1946B67E2FFA84320566CB");
