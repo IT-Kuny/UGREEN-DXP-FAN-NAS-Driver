@@ -1574,6 +1574,8 @@ static ssize_t set_pwm_enable(struct device *dev, struct device_attribute *attr,
 	if (err)
 		return err;
 
+	it87_update_pwm_ctrl(data, nr);
+
 	if (val == 0) {
 		if (nr < 3 && has_fanctl_onoff(data)) {
 			int tmp;
@@ -1609,7 +1611,7 @@ static ssize_t set_pwm_enable(struct device *dev, struct device_attribute *attr,
 				data->pwm_temp_map[nr];
 			if (val != 1) {
 				ctrl |= 0x80;
-			} else if (!has_fanctl_onoff(data) &&
+			} else if ((!has_fanctl_onoff(data) || nr >= 3) &&
 				   data->pwm_duty[nr] == pwm_to_reg(data, 0xff)) {
 				/*
 				 * Chips without FAN_CTL ON/OFF use duty==max to
