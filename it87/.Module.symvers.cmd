@@ -1,0 +1,1 @@
+savedcmd_Module.symvers :=  /usr/src/linux-headers-6.17.0-1018-azure/scripts/mod/modpost -M -m -b -x -a      -o Module.symvers -T modules.order -i /usr/src/linux-headers-6.17.0-1018-azure/Module.symvers -e 
