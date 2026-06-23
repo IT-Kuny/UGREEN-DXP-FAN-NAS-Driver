@@ -14,6 +14,7 @@ This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedo
 Whats currenttly being supported:
 
 - DXP2800
+- DXP8800
 
 Whats currently being partially supported: 
 
