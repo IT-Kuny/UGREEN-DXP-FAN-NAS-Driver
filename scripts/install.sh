@@ -30,6 +30,12 @@ check_root() {
     fi
 }
 
+is_hwmon_vid_builtin() {
+    local kernel_version="${1:-$(uname -r)}"
+    local builtin_file="/lib/modules/${kernel_version}/modules.builtin"
+    [ -f "$builtin_file" ] && grep -Eq "$HWMON_VID_BUILTIN_PATTERN" "$builtin_file"
+}
+
 check_dependencies() {
     log "Checking dependencies..."
     local missing=()
@@ -75,8 +81,7 @@ check_hwmon_vid() {
         return
     fi
 
-    if [ -f "/lib/modules/${kernel_version}/modules.builtin" ] && \
-       grep -Eq "$HWMON_VID_BUILTIN_PATTERN" "/lib/modules/${kernel_version}/modules.builtin"; then
+    if is_hwmon_vid_builtin "$kernel_version"; then
         log "${HWMON_VID_MODULE} is built into this kernel"
         return
     fi
@@ -143,14 +148,15 @@ install_dkms() {
     if lsmod | grep -q it87; then
         log "it87 driver loaded successfully"
     else
+        local current_kernel
+        current_kernel=$(uname -r)
         log "Loading it87 driver..."
-        if [ -f "/lib/modules/$(uname -r)/modules.builtin" ] && \
-           grep -Eq "$HWMON_VID_BUILTIN_PATTERN" "/lib/modules/$(uname -r)/modules.builtin"; then
+        if is_hwmon_vid_builtin "$current_kernel"; then
             log "${HWMON_VID_MODULE} is built-in; skipping modprobe"
         else
             modprobe "$HWMON_VID_MODULE" 2>/dev/null || \
                 modprobe "$HWMON_VID_MODULE_ALT" || \
-                error "Failed to load required dependency ${HWMON_VID_MODULE}."
+                error "Failed to load required dependency ${HWMON_VID_MODULE}/${HWMON_VID_MODULE_ALT}."
         fi
         modprobe it87 ignore_resource_conflict=1 || \
             error "Failed to load it87 driver. Check 'dmesg' for details."
