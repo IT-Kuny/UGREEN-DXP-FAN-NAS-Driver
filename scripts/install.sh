@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 IT87_DIR="$REPO_DIR/it87"
 HWMON_VID_MODULE="hwmon-vid"
-HWMON_VID_MODULE_ALT="hwmon_vid"
+HWMON_VID_MODULE_ALIAS="hwmon_vid"
 HWMON_VID_BUILTIN_PATTERN='(^|/)hwmon[-_]vid(\.ko)?$'
 
 log() {
@@ -76,8 +76,8 @@ check_hwmon_vid() {
     kernel_version=$(uname -r)
 
     if modinfo -k "$kernel_version" "$HWMON_VID_MODULE" &>/dev/null || \
-       modinfo -k "$kernel_version" "$HWMON_VID_MODULE_ALT" &>/dev/null; then
-        log "${HWMON_VID_MODULE} module is available"
+       modinfo -k "$kernel_version" "$HWMON_VID_MODULE_ALIAS" &>/dev/null; then
+        log "${HWMON_VID_MODULE} module is available (alias ${HWMON_VID_MODULE_ALIAS} is equivalent)"
         return
     fi
 
@@ -155,8 +155,8 @@ install_dkms() {
             log "${HWMON_VID_MODULE} is built-in; skipping modprobe"
         else
             modprobe "$HWMON_VID_MODULE" 2>/dev/null || \
-                modprobe "$HWMON_VID_MODULE_ALT" || \
-                error "Failed to load required dependency ${HWMON_VID_MODULE}/${HWMON_VID_MODULE_ALT}."
+                modprobe "$HWMON_VID_MODULE_ALIAS" || \
+                error "Failed to load required dependency ${HWMON_VID_MODULE} (alias ${HWMON_VID_MODULE_ALIAS})."
         fi
         modprobe it87 ignore_resource_conflict=1 || \
             error "Failed to load it87 driver. Check 'dmesg' for details."

@@ -107,6 +107,8 @@ The installer automatically sets up systemd services that ensure:
 - The fancontrol configuration is backed up and restored if corrupted
 - Device paths are updated automatically if they change after reboot
 
+`hwmon-vid` is used as the canonical name in this repo; `hwmon_vid` is an equivalent module alias on some distros/kernels.
+
 ## Install Guide (Manual)
 
 <details>
@@ -224,6 +226,7 @@ Install matching kernel + headers/modules for your running kernel, then verify:
 
 ```bash
 uname -r
+# `hwmon_vid` is an equivalent alias if your distro exposes that spelling
 modinfo -k "$(uname -r)" hwmon-vid || modinfo -k "$(uname -r)" hwmon_vid
 ```
 
