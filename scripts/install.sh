@@ -11,6 +11,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 IT87_DIR="$REPO_DIR/it87"
+HWMON_VID_MODULE="hwmon-vid"
+HWMON_VID_MODULE_ALIAS="hwmon_vid"
+HWMON_VID_BUILTIN_PATTERN='(^|/)hwmon[-_]vid(\.ko)?$'
 
 log() {
     echo "[install] $*"
@@ -25,6 +28,12 @@ check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         error "This script must be run as root (use sudo)"
     fi
+}
+
+is_hwmon_vid_builtin() {
+    local kernel_version="${1:-$(uname -r)}"
+    local builtin_file="/lib/modules/${kernel_version}/modules.builtin"
+    [ -f "$builtin_file" ] && grep -Eq "$HWMON_VID_BUILTIN_PATTERN" "$builtin_file"
 }
 
 check_dependencies() {
@@ -59,6 +68,34 @@ Please install them:
     fi
 
     log "All dependencies satisfied"
+}
+
+check_hwmon_vid() {
+    log "Checking ${HWMON_VID_MODULE} availability..."
+    local kernel_version
+    kernel_version=$(uname -r)
+
+    if ! command -v modinfo &>/dev/null; then
+        error "Missing required command: modinfo (usually provided by the 'kmod' package)"
+    fi
+
+    if modinfo -k "$kernel_version" "$HWMON_VID_MODULE" &>/dev/null || \
+       modinfo -k "$kernel_version" "$HWMON_VID_MODULE_ALIAS" &>/dev/null; then
+        log "${HWMON_VID_MODULE} module is available (alias ${HWMON_VID_MODULE_ALIAS} is equivalent)"
+        return
+    fi
+
+    if is_hwmon_vid_builtin "$kernel_version"; then
+        log "${HWMON_VID_MODULE} is built into this kernel"
+        return
+    fi
+
+    error "$(cat <<EOF
+Required dependency '${HWMON_VID_MODULE}' (alias '${HWMON_VID_MODULE_ALIAS}') is not available for kernel ${kernel_version}.
+This installation was aborted to avoid a broken setup.
+Install a kernel package/config that provides ${HWMON_VID_MODULE} (or its equivalent alias ${HWMON_VID_MODULE_ALIAS}), then run this installer again.
+EOF
+)"
 }
 
 check_submodule() {
@@ -115,7 +152,16 @@ install_dkms() {
     if lsmod | grep -q it87; then
         log "it87 driver loaded successfully"
     else
+        local current_kernel
+        current_kernel=$(uname -r)
         log "Loading it87 driver..."
+        if is_hwmon_vid_builtin "$current_kernel"; then
+            log "${HWMON_VID_MODULE} is built-in; skipping modprobe"
+        else
+            modprobe "$HWMON_VID_MODULE" 2>/dev/null || \
+                modprobe "$HWMON_VID_MODULE_ALIAS" || \
+                error "Failed to load required dependency ${HWMON_VID_MODULE} (alias ${HWMON_VID_MODULE_ALIAS})."
+        fi
         modprobe it87 ignore_resource_conflict=1 || \
             error "Failed to load it87 driver. Check 'dmesg' for details."
     fi
@@ -200,6 +246,7 @@ print_status() {
 # Main
 check_root
 check_dependencies
+check_hwmon_vid
 check_submodule
 install_dkms
 install_modprobe_config

@@ -102,9 +102,12 @@ sudo systemctl enable --now fancontrol
 ```
 
 The installer automatically sets up systemd services that ensure:
+- The `hwmon-vid` dependency module is loaded before `it87`
 - The it87 driver is loaded **before** fancontrol starts (prevents race conditions)
 - The fancontrol configuration is backed up and restored if corrupted
 - Device paths are updated automatically if they change after reboot
+
+`hwmon-vid` is used as the canonical name in this repo; `hwmon_vid` is an equivalent module alias on some distros/kernels.
 
 ## Install Guide (Manual)
 
@@ -188,13 +191,47 @@ If you installed manually, ensure the it87 module is loaded before fancontrol st
 # Check if the module is loaded
 lsmod | grep it87
 
+# Load dependency + it87 manually
+sudo modprobe hwmon-vid
+
 # Load it manually
 sudo modprobe it87 ignore_resource_conflict=1
 
 # Make it persistent across reboots
-echo "it87" | sudo tee /etc/modules-load.d/it87.conf
+echo "hwmon-vid" | sudo tee /etc/modules-load.d/it87.conf
+echo "it87" | sudo tee -a /etc/modules-load.d/it87.conf
 echo "options it87 ignore_resource_conflict=1" | sudo tee /etc/modprobe.d/it87.conf
 ```
+
+### `it87` fails to load with `Unknown symbol vid_from_reg` / `vid_which_vrm`
+
+This means the `hwmon-vid` dependency is not loaded yet.
+
+```bash
+sudo modprobe hwmon-vid
+sudo modprobe it87 ignore_resource_conflict=1
+```
+
+If `modprobe hwmon-vid` fails, follow the **Installer aborts because `hwmon-vid` is unavailable** section next.
+
+For persistence across reboots, use the same modules-load/modprobe steps shown in
+**Fan control stops working after reboot** above.
+
+### Installer aborts because `hwmon-vid` is unavailable
+
+The installer now checks whether `hwmon-vid` exists for your running kernel and
+aborts if it is missing, to prevent an unusable setup.
+
+Install matching kernel + headers/modules for your running kernel, then verify:
+
+```bash
+uname -r
+# `hwmon_vid` is an equivalent alias if your distro exposes that spelling
+modinfo -k "$(uname -r)" hwmon-vid || modinfo -k "$(uname -r)" hwmon_vid
+```
+
+If `modinfo` still fails, install/reinstall your distro's kernel modules package
+for `$(uname -r)` and reboot into that kernel before running the installer again.
 
 ### Configuration file is corrupted or missing
 
