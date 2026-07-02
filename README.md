@@ -210,13 +210,18 @@ sudo modprobe hwmon-vid
 sudo modprobe it87 ignore_resource_conflict=1
 ```
 
-To persist this across reboots:
+If `modprobe hwmon-vid` fails, follow **Installer aborts because `hwmon-vid` is unavailable** below.
 
-```bash
-echo "hwmon-vid" | sudo tee /etc/modules-load.d/it87.conf
-echo "it87" | sudo tee -a /etc/modules-load.d/it87.conf
-echo "options it87 ignore_resource_conflict=1" | sudo tee /etc/modprobe.d/it87.conf
-```
+For persistence across reboots, use the same modules-load/modprobe steps shown in
+**Fan control stops working after reboot** above.
+
+### Installer aborts because `hwmon-vid` is unavailable
+
+The installer now checks whether `hwmon-vid` exists for your running kernel and
+aborts if it is missing, to prevent an unusable setup.
+
+Install a kernel/headers package that provides `hwmon-vid`, then run the
+installer again.
 
 ### Configuration file is corrupted or missing
 

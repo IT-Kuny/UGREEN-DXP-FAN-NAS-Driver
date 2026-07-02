@@ -11,6 +11,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 IT87_DIR="$REPO_DIR/it87"
+HWMON_VID_MODULE="hwmon-vid"
+HWMON_VID_MODULE_ALT="hwmon_vid"
+HWMON_VID_BUILTIN_PATTERN='(^|/)hwmon[-_]vid(\.ko)?$'
 
 log() {
     echo "[install] $*"
@@ -59,6 +62,31 @@ Please install them:
     fi
 
     log "All dependencies satisfied"
+}
+
+check_hwmon_vid() {
+    log "Checking ${HWMON_VID_MODULE} availability..."
+    local kernel_version
+    kernel_version=$(uname -r)
+
+    if modinfo -k "$kernel_version" "$HWMON_VID_MODULE" &>/dev/null || \
+       modinfo -k "$kernel_version" "$HWMON_VID_MODULE_ALT" &>/dev/null; then
+        log "${HWMON_VID_MODULE} module is available"
+        return
+    fi
+
+    if [ -f "/lib/modules/${kernel_version}/modules.builtin" ] && \
+       grep -Eq "$HWMON_VID_BUILTIN_PATTERN" "/lib/modules/${kernel_version}/modules.builtin"; then
+        log "${HWMON_VID_MODULE} is built into this kernel"
+        return
+    fi
+
+    error "$(cat <<EOF
+Required dependency '${HWMON_VID_MODULE}' is not available for kernel ${kernel_version}.
+This installation was aborted to avoid a broken setup.
+Install a kernel package/config that provides ${HWMON_VID_MODULE}, then run this installer again.
+EOF
+)"
 }
 
 check_submodule() {
@@ -116,7 +144,14 @@ install_dkms() {
         log "it87 driver loaded successfully"
     else
         log "Loading it87 driver..."
-        modprobe hwmon-vid 2>/dev/null || true
+        if [ -f "/lib/modules/$(uname -r)/modules.builtin" ] && \
+           grep -Eq "$HWMON_VID_BUILTIN_PATTERN" "/lib/modules/$(uname -r)/modules.builtin"; then
+            log "${HWMON_VID_MODULE} is built-in; skipping modprobe"
+        else
+            modprobe "$HWMON_VID_MODULE" 2>/dev/null || \
+                modprobe "$HWMON_VID_MODULE_ALT" || \
+                error "Failed to load required dependency ${HWMON_VID_MODULE}."
+        fi
         modprobe it87 ignore_resource_conflict=1 || \
             error "Failed to load it87 driver. Check 'dmesg' for details."
     fi
@@ -201,6 +236,7 @@ print_status() {
 # Main
 check_root
 check_dependencies
+check_hwmon_vid
 check_submodule
 install_dkms
 install_modprobe_config
