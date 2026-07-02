@@ -75,6 +75,10 @@ check_hwmon_vid() {
     local kernel_version
     kernel_version=$(uname -r)
 
+    if ! command -v modinfo &>/dev/null; then
+        error "Missing required command: modinfo (usually provided by the 'kmod' package)"
+    fi
+
     if modinfo -k "$kernel_version" "$HWMON_VID_MODULE" &>/dev/null || \
        modinfo -k "$kernel_version" "$HWMON_VID_MODULE_ALIAS" &>/dev/null; then
         log "${HWMON_VID_MODULE} module is available (alias ${HWMON_VID_MODULE_ALIAS} is equivalent)"
