@@ -102,6 +102,7 @@ sudo systemctl enable --now fancontrol
 ```
 
 The installer automatically sets up systemd services that ensure:
+- The `hwmon-vid` dependency module is loaded before `it87`
 - The it87 driver is loaded **before** fancontrol starts (prevents race conditions)
 - The fancontrol configuration is backed up and restored if corrupted
 - Device paths are updated automatically if they change after reboot
@@ -188,11 +189,32 @@ If you installed manually, ensure the it87 module is loaded before fancontrol st
 # Check if the module is loaded
 lsmod | grep it87
 
+# Load dependency + it87 manually
+sudo modprobe hwmon-vid
+
 # Load it manually
 sudo modprobe it87 ignore_resource_conflict=1
 
 # Make it persistent across reboots
-echo "it87" | sudo tee /etc/modules-load.d/it87.conf
+echo "hwmon-vid" | sudo tee /etc/modules-load.d/it87.conf
+echo "it87" | sudo tee -a /etc/modules-load.d/it87.conf
+echo "options it87 ignore_resource_conflict=1" | sudo tee /etc/modprobe.d/it87.conf
+```
+
+### `it87` fails to load with `Unknown symbol vid_from_reg` / `vid_which_vrm`
+
+This means the `hwmon-vid` dependency is not loaded yet.
+
+```bash
+sudo modprobe hwmon-vid
+sudo modprobe it87 ignore_resource_conflict=1
+```
+
+To persist this across reboots:
+
+```bash
+echo "hwmon-vid" | sudo tee /etc/modules-load.d/it87.conf
+echo "it87" | sudo tee -a /etc/modules-load.d/it87.conf
 echo "options it87 ignore_resource_conflict=1" | sudo tee /etc/modprobe.d/it87.conf
 ```
 

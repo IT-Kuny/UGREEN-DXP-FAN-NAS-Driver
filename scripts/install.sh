@@ -116,6 +116,7 @@ install_dkms() {
         log "it87 driver loaded successfully"
     else
         log "Loading it87 driver..."
+        modprobe hwmon-vid 2>/dev/null || true
         modprobe it87 ignore_resource_conflict=1 || \
             error "Failed to load it87 driver. Check 'dmesg' for details."
     fi
