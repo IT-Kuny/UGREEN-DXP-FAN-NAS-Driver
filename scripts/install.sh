@@ -91,9 +91,9 @@ check_hwmon_vid() {
     fi
 
     error "$(cat <<EOF
-Required dependency '${HWMON_VID_MODULE}' is not available for kernel ${kernel_version}.
+Required dependency '${HWMON_VID_MODULE}' (alias '${HWMON_VID_MODULE_ALIAS}') is not available for kernel ${kernel_version}.
 This installation was aborted to avoid a broken setup.
-Install a kernel package/config that provides ${HWMON_VID_MODULE}, then run this installer again.
+Install a kernel package/config that provides ${HWMON_VID_MODULE} (or its equivalent alias ${HWMON_VID_MODULE_ALIAS}), then run this installer again.
 EOF
 )"
 }
