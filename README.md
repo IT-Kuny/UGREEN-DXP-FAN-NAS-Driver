@@ -11,12 +11,13 @@ This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedo
 > [!IMPORTANT]  
 > As it seems, does UGREEN utilize the it87 Chipset for each NAS slightly different. In that manner, I need your help, to extend the driver for all UGREEN NAS's. If you see your NAS not listed here, feel free to open an Issue with your NAS Model.
 
-Whats currenttly being supported:
+What's currently being supported:
 
 - DXP2800
+- DXP2800 GT (uses the same IT8613E Super I/O chip as the DXP2800; follow the same setup steps)
 - DXP8800
 
-Whats currently being partially supported: 
+What's currently being partially supported: 
 
 - DXP6800Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/6) #6 for now)
 - DXP4800 (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/11) #11 for now — fan visibility works, active PWM control requires additional setup)
@@ -299,7 +300,41 @@ make clean
 sudo make dkms
 ```
 
-### Why did i that?
+### TrueNAS SCALE — DKMS build process is killed (`Killed` in make.log)
+
+On TrueNAS SCALE the DKMS build may be terminated by the kernel OOM killer during
+the compilation of `it87.o`.  This is seen as:
+
+```
+make[3]: *** [.../it87.o] Killed
+```
+
+The most common cause is that the TrueNAS SCALE kernel (`production+truenas`) requires
+BTF (BPF Type Format) metadata, whose generation is memory-intensive.  The automated
+installer already copies `/sys/kernel/btf/vmlinux` into the kernel build directory to
+satisfy this requirement, but the system may still run out of memory when running
+multiple parallel compile jobs.
+
+**Workaround — build with a single job:**
+
+```bash
+# Clone and enter the repo (with submodule)
+git clone --recurse-submodules https://github.com/0n1cOn3/UGREEN-Fan-Control.git
+cd UGREEN-Fan-Control/it87
+
+# Copy BTF vmlinux if it is missing from the build tree
+KBUILD=$(readlink -f /lib/modules/$(uname -r)/build)
+[ ! -f "${KBUILD}/vmlinux" ] && cp /sys/kernel/btf/vmlinux "${KBUILD}/"
+
+# Build and install with a single parallel job to reduce memory pressure
+make -j1
+sudo make install
+```
+
+After a successful build, continue with the rest of the
+[Install Guide (Manual)](#install-guide-manual).
+
+### Why did I do that?
 
 The idea for this project has been brought by this [Reddit post](https://www.reddit.com/r/unRAID/comments/1dzep0s/how_to_configure_fan_control_ugreen_nas/)
 
