@@ -13,12 +13,12 @@ This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedo
 
 What's currently being supported:
 
-- DXP2800
-- DXP2800 GT (uses the same IT8613E Super I/O chip as the DXP2800; follow the same setup steps)
+- DXP2800 (Intel N100)
 - DXP8800
 
-What's currently being partially supported: 
+What's currently being investigated/partially supported:
 
+- DXP2800 GT / DXP4800 GT (AMD Ryzen Embedded R2514 — see [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18) #18; the AMD platform requires additional steps, see the [AMD GT Series troubleshooting section](#amd-gt-series-dxp2800-gt--dxp4800-gt--driver-loads-but-fans-are-not-detected-or-controlled))
 - DXP6800Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/6) #6 for now)
 - DXP4800 (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/11) #11 for now — fan visibility works, active PWM control requires additional setup)
 
@@ -315,7 +315,19 @@ installer already copies `/sys/kernel/btf/vmlinux` into the kernel build directo
 satisfy this requirement, but the system may still run out of memory when running
 multiple parallel compile jobs.
 
-**Workaround — build with a single job:**
+ZFS ARC typically consumes the bulk of available RAM on TrueNAS, which leaves very
+little headroom for the compiler — even with `-j1`.
+
+**Step 1 — Create a temporary swap file to provide extra virtual memory:**
+
+```bash
+sudo fallocate -l 2G /var/tmp/build-swap
+sudo chmod 600 /var/tmp/build-swap
+sudo mkswap /var/tmp/build-swap
+sudo swapon /var/tmp/build-swap
+```
+
+**Step 2 — Build with a single job:**
 
 ```bash
 # Clone and enter the repo (with submodule)
@@ -331,8 +343,83 @@ make -j1
 sudo make install
 ```
 
+**Step 3 — Remove the swap file after a successful build:**
+
+```bash
+sudo swapoff /var/tmp/build-swap
+sudo rm /var/tmp/build-swap
+```
+
 After a successful build, continue with the rest of the
 [Install Guide (Manual)](#install-guide-manual).
+
+### AMD GT Series (DXP2800 GT / DXP4800 GT) — driver loads but fans are not detected or controlled
+
+The GT Series uses an **AMD Ryzen Embedded R2514 SoC** (Zen+ architecture) instead of
+the Intel N100 found in the standard DXP2800.  The AMD platform behaves differently
+from Intel in two important ways that can prevent the `it87` driver from loading or
+detecting the Super I/O chip correctly.
+
+#### 1 — ACPI resource enforcement on AMD
+
+AMD firmware (ACPI tables) tends to claim the Super I/O I/O-port range more aggressively
+than Intel firmware does.  The `ignore_resource_conflict=1` module option (already set by
+the installer) should allow the driver to proceed, but some AMD boards also require the
+kernel-level `acpi_enforce_resources=lax` boot parameter.
+
+Add it to your kernel command line (edit `/etc/default/grub` and run `update-grub`, or
+use your bootloader's configuration):
+
+```
+acpi_enforce_resources=lax
+```
+
+> [!WARNING]
+> `acpi_enforce_resources=lax` can cause instability on systems where ACPI and the driver
+> genuinely share a resource.  Use it only if the driver fails to load and `dmesg` shows
+> ACPI resource conflict errors related to it87.
+
+#### 2 — sp5100_tco watchdog driver conflict
+
+On AMD Ryzen Embedded platforms the kernel's `sp5100_tco` watchdog driver often claims
+I/O regions that overlap with the Super I/O chip.  Load order matters: if `sp5100_tco`
+loads first it can block `it87` from accessing its registers.
+
+Blacklist `sp5100_tco` if you do not need the hardware watchdog:
+
+```bash
+echo "blacklist sp5100_tco" | sudo tee /etc/modprobe.d/sp5100_tco-blacklist.conf
+sudo update-initramfs -u   # Debian/Ubuntu
+# or: sudo dracut --force  # Fedora/RHEL
+```
+
+Then reload the driver:
+
+```bash
+sudo rmmod it87 2>/dev/null; sudo modprobe it87 ignore_resource_conflict=1
+```
+
+#### Collecting diagnostics (AMD GT Series)
+
+If neither workaround above resolves the issue, collect the following and open or update
+an issue with the output:
+
+```bash
+# System and CPU identification
+sudo dmidecode -t system -t baseboard
+lscpu | grep -E "Vendor|Model|Architecture"
+
+# Check if Super I/O chip is claimed by ACPI
+sudo cat /proc/ioports | grep -v "^  " | head -40
+
+# Attempt to load the driver and capture kernel messages
+sudo modprobe -r it87 2>/dev/null; sudo modprobe it87 ignore_resource_conflict=1
+dmesg | tail -40
+
+# Sensors detect output
+sudo sensors-detect --auto
+sensors
+```
 
 ### Why did I do that?
 
