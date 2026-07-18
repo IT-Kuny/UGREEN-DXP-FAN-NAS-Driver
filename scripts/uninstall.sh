@@ -11,6 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 IT87_DIR="$REPO_DIR/it87"
+SP5100_TCO_BLACKLIST="/etc/modprobe.d/sp5100_tco-blacklist.conf"
+GRUB_DEFAULT_FILE="/etc/default/grub"
 
 log() {
     echo "[uninstall] $*"
@@ -48,6 +50,34 @@ systemctl daemon-reload
 log "Removing modprobe configuration..."
 rm -f /etc/modprobe.d/it87.conf
 rm -f /etc/modules-load.d/it87.conf
+
+log "Removing AMD-specific configuration (if present)..."
+if [ -f "${SP5100_TCO_BLACKLIST}" ]; then
+    rm -f "${SP5100_TCO_BLACKLIST}"
+    log "Removed ${SP5100_TCO_BLACKLIST}"
+fi
+
+# Remove acpi_enforce_resources=lax from GRUB if we added it.
+if [ -f "${GRUB_DEFAULT_FILE}" ] && grep -q "acpi_enforce_resources=lax" "${GRUB_DEFAULT_FILE}"; then
+    log "Removing 'acpi_enforce_resources=lax' from ${GRUB_DEFAULT_FILE}..."
+    # Three substitution passes to cover every position the parameter may appear:
+    #   1. trailing: "quiet splash acpi_enforce_resources=lax"
+    #   2. leading:  "acpi_enforce_resources=lax quiet splash"
+    #   3. standalone (no adjacent spaces): "acpi_enforce_resources=lax"
+    sed -i \
+        -e "s| acpi_enforce_resources=lax||g" \
+        -e "s|acpi_enforce_resources=lax ||g" \
+        -e "s|acpi_enforce_resources=lax||g" \
+        "${GRUB_DEFAULT_FILE}"
+    if command -v update-grub &>/dev/null; then
+        update-grub 2>/dev/null || log "WARNING: update-grub failed — regenerate GRUB config manually."
+    elif command -v grub2-mkconfig &>/dev/null; then
+        grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null || true
+    elif command -v grub-mkconfig &>/dev/null; then
+        grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null || true
+    fi
+    log "Kernel parameter removed from GRUB configuration"
+fi
 
 log "Removing config guard script..."
 rm -f /usr/local/sbin/fancontrol-config-guard.sh

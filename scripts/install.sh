@@ -15,6 +15,14 @@ HWMON_VID_MODULE="hwmon-vid"
 HWMON_VID_MODULE_ALIAS="hwmon_vid"
 HWMON_VID_BUILTIN_PATTERN='(^|/)hwmon[-_]vid(\.ko)?$'
 
+# Paths that can be overridden in tests
+CPU_INFO_PATH="${CPU_INFO_PATH:-/proc/cpuinfo}"
+GRUB_DEFAULT_FILE="${GRUB_DEFAULT_FILE:-/etc/default/grub}"
+SP5100_TCO_BLACKLIST="${SP5100_TCO_BLACKLIST:-/etc/modprobe.d/sp5100_tco-blacklist.conf}"
+
+# Detected CPU vendor — populated in main before first use
+CPU_VENDOR=""
+
 log() {
     echo "[install] $*"
 }
@@ -34,6 +42,125 @@ is_hwmon_vid_builtin() {
     local kernel_version="${1:-$(uname -r)}"
     local builtin_file="/lib/modules/${kernel_version}/modules.builtin"
     [ -f "$builtin_file" ] && grep -Eq "$HWMON_VID_BUILTIN_PATTERN" "$builtin_file"
+}
+
+# ---------------------------------------------------------------------------
+# Hardware detection
+# ---------------------------------------------------------------------------
+
+# Returns "AMD", "Intel", or "Unknown" by reading CPU_INFO_PATH.
+# CPU_INFO_PATH defaults to /proc/cpuinfo and can be overridden for testing.
+detect_cpu_vendor() {
+    if grep -qi "AuthenticAMD" "${CPU_INFO_PATH}" 2>/dev/null; then
+        echo "AMD"
+    elif grep -qi "GenuineIntel" "${CPU_INFO_PATH}" 2>/dev/null; then
+        echo "Intel"
+    else
+        echo "Unknown"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# AMD-specific helpers
+# ---------------------------------------------------------------------------
+
+# Attempt to add a kernel parameter to GRUB_CMDLINE_LINUX_DEFAULT.
+# Uses GRUB_DEFAULT_FILE (defaults to /etc/default/grub).
+# Returns 0 on success or if already present; 1 if GRUB is unavailable
+# (non-fatal — callers should warn the user rather than aborting).
+apply_grub_kernel_param() {
+    local param="$1"
+
+    if [ ! -f "${GRUB_DEFAULT_FILE}" ]; then
+        return 1
+    fi
+
+    # Already present anywhere in the file → nothing to do.
+    if grep -q "${param}" "${GRUB_DEFAULT_FILE}"; then
+        log "Kernel parameter '${param}' is already set in ${GRUB_DEFAULT_FILE}"
+        return 0
+    fi
+
+    # Append the parameter to GRUB_CMDLINE_LINUX_DEFAULT.
+    # The sed pattern handles both populated and empty quoted values.
+    if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' "${GRUB_DEFAULT_FILE}"; then
+        sed -i "s|\(GRUB_CMDLINE_LINUX_DEFAULT=\"[^\"]*\)\"|\1 ${param}\"|" \
+            "${GRUB_DEFAULT_FILE}"
+    else
+        # Variable not yet present — add it.
+        printf '\nGRUB_CMDLINE_LINUX_DEFAULT="%s"\n' "${param}" \
+            >> "${GRUB_DEFAULT_FILE}"
+    fi
+
+    # Regenerate the boot configuration (best-effort; ignore failure).
+    if command -v update-grub &>/dev/null; then
+        update-grub 2>/dev/null \
+            || log "WARNING: update-grub failed — regenerate GRUB config manually."
+    elif command -v grub2-mkconfig &>/dev/null; then
+        grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null \
+            || log "WARNING: grub2-mkconfig failed — regenerate GRUB config manually."
+    elif command -v grub-mkconfig &>/dev/null; then
+        grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null \
+            || log "WARNING: grub-mkconfig failed — regenerate GRUB config manually."
+    else
+        log "Updated ${GRUB_DEFAULT_FILE} but no GRUB update command found. Regenerate the boot config manually."
+    fi
+
+    log "Kernel parameter '${param}' added to ${GRUB_DEFAULT_FILE}"
+    return 0
+}
+
+# Remove a kernel parameter from GRUB_CMDLINE_LINUX_DEFAULT (used by uninstall).
+remove_grub_kernel_param() {
+    local param="$1"
+
+    [ -f "${GRUB_DEFAULT_FILE}" ] || return 0
+    grep -q "${param}" "${GRUB_DEFAULT_FILE}" || return 0
+
+    # Handle parameter appearing with leading space, trailing space, or standalone.
+    sed -i "s| ${param}||g; s|${param} ||g; s|${param}||g" "${GRUB_DEFAULT_FILE}"
+
+    if command -v update-grub &>/dev/null; then
+        update-grub 2>/dev/null \
+            || log "WARNING: update-grub failed — regenerate GRUB config manually."
+    elif command -v grub2-mkconfig &>/dev/null; then
+        grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null || true
+    elif command -v grub-mkconfig &>/dev/null; then
+        grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null || true
+    fi
+
+    log "Kernel parameter '${param}' removed from ${GRUB_DEFAULT_FILE}"
+}
+
+# Install AMD-specific configuration: sp5100_tco blacklist and (if possible)
+# the acpi_enforce_resources=lax boot parameter.
+install_amd_platform_config() {
+    log "AMD platform detected — installing AMD-specific configuration..."
+
+    # Blacklist sp5100_tco so it no longer races with it87 for Super I/O ports.
+    log "Writing sp5100_tco blacklist to ${SP5100_TCO_BLACKLIST}..."
+    cat > "${SP5100_TCO_BLACKLIST}" << 'MODCONF'
+# sp5100_tco can claim I/O ports used by the IT87 Super I/O chip on AMD
+# platforms, preventing it87 from loading. Blacklisted by the UGREEN fan
+# control installer. Remove this file if you need the sp5100_tco watchdog.
+blacklist sp5100_tco
+MODCONF
+
+    # Add acpi_enforce_resources=lax to the GRUB command line if GRUB is
+    # present on this system. The parameter is needed on some AMD platforms
+    # where ACPI claims the Super I/O I/O-port range.
+    if apply_grub_kernel_param "acpi_enforce_resources=lax"; then
+        log "GRUB updated: 'acpi_enforce_resources=lax' takes effect after reboot."
+    else
+        log ""
+        log "*** AMD platform note ***"
+        log "GRUB was not found (e.g. TrueNAS SCALE uses its own bootloader)."
+        log "If the it87 driver fails to load after reboot, add the kernel"
+        log "parameter 'acpi_enforce_resources=lax' via your bootloader."
+        log "On standard GRUB systems: edit /etc/default/grub and run update-grub."
+        log "*************************"
+        log ""
+    fi
 }
 
 check_dependencies() {
@@ -162,6 +289,14 @@ install_dkms() {
                 modprobe "$HWMON_VID_MODULE_ALIAS" || \
                 error "Failed to load required dependency ${HWMON_VID_MODULE} (alias ${HWMON_VID_MODULE_ALIAS})."
         fi
+        # On AMD platforms sp5100_tco may hold the Super I/O ports.  Unload it
+        # now so it87 can claim them without waiting for the next reboot.
+        if [ "${CPU_VENDOR}" = "AMD" ] && lsmod | grep -q "^sp5100_tco "; then
+            log "Unloading sp5100_tco to free Super I/O ports for it87..."
+            modprobe -r sp5100_tco 2>/dev/null \
+                || log "WARNING: Could not unload sp5100_tco." \
+                       "A reboot may be needed for it87 to load."
+        fi
         modprobe it87 ignore_resource_conflict=1 || \
             error "Failed to load it87 driver. Check 'dmesg' for details."
     fi
@@ -243,13 +378,23 @@ print_status() {
     echo ""
 }
 
+# ---------------------------------------------------------------------------
+# Only run the installer when executed directly (not when sourced for testing)
+# ---------------------------------------------------------------------------
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 # Main
 check_root
 check_dependencies
 check_hwmon_vid
 check_submodule
+CPU_VENDOR="$(detect_cpu_vendor)"
+log "Detected CPU vendor: ${CPU_VENDOR}"
 install_dkms
 install_modprobe_config
+if [ "${CPU_VENDOR}" = "AMD" ]; then
+    install_amd_platform_config
+fi
 install_services
 create_initial_backup
 print_status
+fi
