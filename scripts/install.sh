@@ -73,12 +73,16 @@ warn_amd_chip_compatibility() {
         log "  Fan control will NOT work until a driver is written for it."
         log "  See: https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18"
         log "------------------------------------------------------------"
-        log "  Installation will continue so the DKMS module is ready for"
-        log "  future use or testing on Intel-based devices in the same"
-        log "  chassis.  Press Ctrl-C within 10 seconds to abort."
-        log "------------------------------------------------------------"
-        sleep 10
-    fi
+        if [ -t 1 ]; then
+            log "  Installation will continue so the DKMS module is ready for"
+            log "  future use or testing on Intel-based devices in the same"
+            log "  chassis.  Press Ctrl-C within 10 seconds to abort."
+            log "------------------------------------------------------------"
+            sleep 10
+        else
+            log "  Installation will continue so the DKMS module is ready for future use."
+            log "------------------------------------------------------------"
+        fi
 }
 
 check_dependencies() {
