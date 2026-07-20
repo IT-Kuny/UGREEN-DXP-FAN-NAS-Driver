@@ -24,6 +24,17 @@ error() {
     exit 1
 }
 
+# Returns the CPU vendor: "AMD", "Intel", or "unknown"
+get_cpu_vendor() {
+    local vendor
+    vendor=$(grep -m1 "^vendor_id" /proc/cpuinfo 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
+    case "$vendor" in
+        AuthenticAMD) echo "AMD" ;;
+        GenuineIntel) echo "Intel" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         error "This script must be run as root (use sudo)"
@@ -34,6 +45,32 @@ is_hwmon_vid_builtin() {
     local kernel_version="${1:-$(uname -r)}"
     local builtin_file="/lib/modules/${kernel_version}/modules.builtin"
     [ -f "$builtin_file" ] && grep -Eq "$HWMON_VID_BUILTIN_PATTERN" "$builtin_file"
+}
+
+# Warn when the installer is running on an AMD platform whose Super I/O chip is
+# not yet supported by the it87 driver.  Intel-based UGREEN NAS devices (DXP2800,
+# DXP8800, …) use the IT8613E; AMD-based GT models (DXP2800 GT, DXP4800 GT) use
+# a different chip (ID 0x2011) that the driver does not yet recognise.
+warn_amd_chip_compatibility() {
+    local cpu_vendor
+    cpu_vendor=$(get_cpu_vendor)
+    if [ "$cpu_vendor" = "AMD" ]; then
+        local model_name
+        model_name=$(grep -m1 "^model name" /proc/cpuinfo 2>/dev/null | awk -F': ' '{print $2}')
+        log "------------------------------------------------------------"
+        log "  AMD CPU detected: ${model_name}"
+        log "  WARNING: AMD-based UGREEN GT models (DXP2800 GT, DXP4800 GT)"
+        log "  use a Super I/O chip (ID 0x2011) that is NOT yet supported"
+        log "  by the it87 driver.  Fan control will NOT work until that"
+        log "  chip is identified and a driver is written for it."
+        log "  See: https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18"
+        log "------------------------------------------------------------"
+        log "  Installation will continue so the DKMS module is ready for"
+        log "  future use or testing on Intel-based devices in the same"
+        log "  chassis.  Press Ctrl-C within 10 seconds to abort."
+        log "------------------------------------------------------------"
+        sleep 10
+    fi
 }
 
 check_dependencies() {
@@ -162,14 +199,38 @@ install_dkms() {
                 modprobe "$HWMON_VID_MODULE_ALIAS" || \
                 error "Failed to load required dependency ${HWMON_VID_MODULE} (alias ${HWMON_VID_MODULE_ALIAS})."
         fi
-        modprobe it87 ignore_resource_conflict=1 || \
-            error "Failed to load it87 driver. Check 'dmesg' for details."
+        if [ "$(get_cpu_vendor)" = "AMD" ]; then
+            modprobe it87 || \
+                error "Failed to load it87 driver. Check 'dmesg' for details."
+        else
+            modprobe it87 ignore_resource_conflict=1 || \
+                error "Failed to load it87 driver. Check 'dmesg' for details."
+        fi
     fi
 }
 
 install_modprobe_config() {
     log "Installing modprobe configuration..."
-    cp "$REPO_DIR/config/it87-modprobe.conf" /etc/modprobe.d/it87.conf
+
+    local cpu_vendor
+    cpu_vendor=$(get_cpu_vendor)
+
+    if [ "$cpu_vendor" = "AMD" ]; then
+        # AMD platforms do not have ACPI claiming the Super I/O I/O ports,
+        # so ignore_resource_conflict is not required.
+        cat > /etc/modprobe.d/it87.conf << 'EOF'
+# Options for the it87 hardware monitoring driver
+# AMD platform: ACPI does not claim Super I/O I/O ports,
+# so ignore_resource_conflict is not required here.
+EOF
+        log "AMD platform detected: modprobe config written without ignore_resource_conflict"
+    else
+        # Intel (and unknown) platforms: ACPI claims the Super I/O ports on
+        # UGREEN NAS devices, so the resource conflict must be ignored.
+        cp "$REPO_DIR/config/it87-modprobe.conf" /etc/modprobe.d/it87.conf
+        log "Intel platform detected: modprobe config written with ignore_resource_conflict=1"
+    fi
+
     cp "$REPO_DIR/config/it87.conf" /etc/modules-load.d/it87.conf
     log "Module will be loaded automatically on boot"
 }
@@ -246,6 +307,7 @@ print_status() {
 # Main
 check_root
 check_dependencies
+warn_amd_chip_compatibility
 check_hwmon_vid
 check_submodule
 install_dkms

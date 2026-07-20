@@ -10,7 +10,10 @@ RemainAfterExit=yes
 ExecStartPre=/sbin/depmod -a
 # Optional on purpose: succeeds on module systems, is harmless when built-in.
 ExecStartPre=-/sbin/modprobe hwmon-vid
-ExecStart=/sbin/modprobe it87 ignore_resource_conflict=1
+# On Intel platforms ACPI claims the Super I/O I/O ports, so
+# ignore_resource_conflict=1 is required.  On AMD platforms those ports are
+# not claimed by ACPI, so the option is unnecessary.
+ExecStart=/bin/sh -c 'if grep -q "^vendor_id.*AuthenticAMD" /proc/cpuinfo 2>/dev/null; then modprobe it87; else modprobe it87 ignore_resource_conflict=1; fi'
 ExecStop=-/sbin/modprobe -r it87
 
 [Install]
