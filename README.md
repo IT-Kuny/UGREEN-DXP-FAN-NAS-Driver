@@ -27,6 +27,21 @@ What's **not yet supported** (under investigation):
 
 - DXP2800 GT / DXP4800 GT — these **GT** models use an **AMD Ryzen Embedded R2514** CPU (unlike the Intel N100 in the DXP2800) and a **different Super I/O chip** (a **National Semiconductor / Texas Instruments** chip with ID `0x2011` at I/O port `0x2e`).  The `it87` driver does **not** apply to this hardware. See [Issue #18](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18) for diagnostic details and progress.
 
+> [!NOTE]
+> **AMD-based models (DXP2800 GT / DXP4800 GT):** On these, the LED MCU sits on a
+> **Synopsys DesignWare** I2C controller (ACPI `AMDI0010`) rather than the Intel
+> *SMBus I801 adapter*. The mainline `i2c-designware-platform` / `i2c-designware-core`
+> drivers must be loaded for `/dev/i2c-*` to exist:
+> ```
+> modprobe i2c-designware-platform   # pulls in i2c-designware-core
+> ```
+> Most general-purpose distros (Debian, Proxmox VE, Arch, Fedora …) ship these as
+> modules and the `modprobe` above is all you need. Where they are disabled, enable
+> `CONFIG_I2C_DESIGNWARE_CORE=m` and `CONFIG_I2C_DESIGNWARE_PLATFORM=m` and build
+> the modules for your kernel. See also
+> [miskcoo/ugreen_leds_controller#100](https://github.com/miskcoo/ugreen_leds_controller/pull/100)
+> for LED MCU framing details on these models.
+
 ---
 
 Here is a step by step guide on how to do this:
