@@ -137,7 +137,7 @@ log_test "Service does not hardcode ignore_resource_conflict=1 unconditionally"
 # The option must appear inside a conditional, not as a plain modprobe argument
 # at the top level.  We verify that the ExecStart line is not a simple
 # 'modprobe it87 ignore_resource_conflict=1'.
-if grep -E "^ExecStart=/sbin/modprobe it87 ignore_resource_conflict=1" "$SERVICE_FILE"; then
+if grep -Eq '^ExecStart=(/[^ ]*/)?modprobe it87 ignore_resource_conflict=1$' "$SERVICE_FILE"; then
     fail "Service hardcodes ignore_resource_conflict=1 without a CPU check"
 else
     pass "Service does not hardcode ignore_resource_conflict=1 unconditionally"
