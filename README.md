@@ -14,13 +14,16 @@ This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedo
 What's currently being supported:
 
 - DXP2800
-- DXP2800 GT (uses the same IT8613E Super I/O chip as the DXP2800; follow the same setup steps)
 - DXP8800
 
 What's currently being partially supported: 
 
 - DXP6800Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/6) #6 for now)
 - DXP4800 (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/11) #11 for now — fan visibility works, active PWM control requires additional setup)
+
+What's **not yet supported** (under investigation):
+
+- DXP2800 GT / DXP4800 GT — these **GT** models use an **AMD Ryzen Embedded R2514** CPU (unlike the Intel N100 in the DXP2800) and a **different Super I/O chip** (sensors-detect reports an unknown chip with ID `0x2011` at I/O port `0x2e`).  The `it87` driver does **not** apply to this hardware. See [Issue #18](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18) for diagnostic details and progress.
 
 ---
 
@@ -333,6 +336,27 @@ sudo make install
 
 After a successful build, continue with the rest of the
 [Install Guide (Manual)](#install-guide-manual).
+
+### TrueNAS SCALE — `it87: disagrees about version of symbol module_layout`
+
+If `dmesg` shows:
+
+```
+it87: disagrees about version of symbol module_layout
+```
+
+and `modprobe it87` fails with `Exec format error`, this means a **pre-built**
+`it87.ko` binary is being loaded that was not compiled for the running TrueNAS
+SCALE kernel.  This almost always means the DKMS build described above was
+**killed before it completed** (see the `Killed` entry in `make.log`).
+
+The fix is to complete a successful DKMS build first using the single-job
+workaround above.  Once the module is correctly compiled against the TrueNAS
+kernel headers (`production+truenas`), the symbol version mismatch disappears.
+
+> [!NOTE]
+> This error is **not** related to the `ignore_resource_conflict=1` option or
+> missing `hwmon-vid`; it is purely a build-vs-kernel mismatch.
 
 ### Why did I do that?
 
