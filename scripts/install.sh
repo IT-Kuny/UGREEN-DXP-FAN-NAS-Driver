@@ -24,15 +24,22 @@ error() {
     exit 1
 }
 
-# Returns the CPU vendor: "AMD", "Intel", or "unknown"
+# Cached CPU vendor (populated on first call).
+_CPU_VENDOR=""
+
+# Returns the CPU vendor: "AMD", "Intel", or "unknown".
+# Result is cached so /proc/cpuinfo is only parsed once per script run.
 get_cpu_vendor() {
-    local vendor
-    vendor=$(grep -m1 "^vendor_id" /proc/cpuinfo 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
-    case "$vendor" in
-        AuthenticAMD) echo "AMD" ;;
-        GenuineIntel) echo "Intel" ;;
-        *) echo "unknown" ;;
-    esac
+    if [ -z "$_CPU_VENDOR" ]; then
+        local vendor
+        vendor=$(grep -m1 "^vendor_id" /proc/cpuinfo 2>/dev/null | awk -F': ' '{print $2}' | tr -d ' ')
+        case "$vendor" in
+            AuthenticAMD) _CPU_VENDOR="AMD" ;;
+            GenuineIntel) _CPU_VENDOR="Intel" ;;
+            *) _CPU_VENDOR="unknown" ;;
+        esac
+    fi
+    echo "$_CPU_VENDOR"
 }
 
 check_root() {
@@ -217,11 +224,12 @@ install_modprobe_config() {
 
     if [ "$cpu_vendor" = "AMD" ]; then
         # AMD platforms do not have ACPI claiming the Super I/O I/O ports,
-        # so ignore_resource_conflict is not required.
+        # so ignore_resource_conflict is not required.  Write an explicit
+        # (options-free) config so any previous Intel install is overwritten.
         cat > /etc/modprobe.d/it87.conf << 'EOF'
 # Options for the it87 hardware monitoring driver
-# AMD platform: ACPI does not claim Super I/O I/O ports,
-# so ignore_resource_conflict is not required here.
+# AMD platform detected: ACPI does not claim Super I/O I/O ports,
+# so no special options are required for this driver.
 EOF
         log "AMD platform detected: modprobe config written without ignore_resource_conflict"
     else

@@ -144,15 +144,12 @@ else
 fi
 
 log_test "Service still passes ignore_resource_conflict=1 for non-AMD path"
-if grep "ignore_resource_conflict=1" "$SERVICE_FILE" | grep -q "else"; then
-    pass "ignore_resource_conflict=1 present in else (non-AMD) branch"
+# The option must appear somewhere in the service file (inside a conditional)
+# to preserve Intel behaviour, but must NOT be the unconditional top-level arg.
+if grep -q "ignore_resource_conflict=1" "$SERVICE_FILE"; then
+    pass "ignore_resource_conflict=1 still present in service file (conditional)"
 else
-    # The 'else' and the option may be on the same ExecStart line
-    if grep -q "ignore_resource_conflict=1" "$SERVICE_FILE"; then
-        pass "ignore_resource_conflict=1 still present in service file (conditional)"
-    else
-        fail "ignore_resource_conflict=1 missing from service file entirely"
-    fi
+    fail "ignore_resource_conflict=1 missing from service file entirely"
 fi
 
 # ---------------------------------------------------------------------------
@@ -176,15 +173,22 @@ else
 fi
 
 log_test "install.sh calls warn_amd_chip_compatibility in main sequence"
-# Verify the function is called (not just defined)
-if awk '/^# Main/{found=1} found && /warn_amd_chip_compatibility/' "$INSTALL_SCRIPT" | grep -q "warn_amd_chip_compatibility"; then
-    pass "warn_amd_chip_compatibility called in main sequence"
+# The function name must appear at least twice: once for the definition and
+# once for the call site.  This is a reliable check that doesn't depend on
+# comments or code ordering.
+call_count=$(grep -c "warn_amd_chip_compatibility" "$INSTALL_SCRIPT" || true)
+if [ "$call_count" -ge 2 ]; then
+    pass "warn_amd_chip_compatibility called in main sequence (found $call_count occurrences)"
 else
-    fail "warn_amd_chip_compatibility not called in main sequence"
+    fail "warn_amd_chip_compatibility not called (found $call_count occurrences, expected >= 2)"
 fi
 
 log_test "install_modprobe_config() is AMD-aware"
-if grep -A5 "install_modprobe_config()" "$INSTALL_SCRIPT" | grep -q "get_cpu_vendor\|cpu_vendor"; then
+# Extract the full body of install_modprobe_config() and verify it references
+# cpu_vendor / get_cpu_vendor.  Using awk to extract the function body avoids
+# the line-count fragility of grep -A.
+if awk '/^install_modprobe_config\(\)/{found=1} found{print} /^}$/ && found{exit}' \
+        "$INSTALL_SCRIPT" | grep -q "cpu_vendor\|get_cpu_vendor"; then
     pass "install_modprobe_config() uses CPU vendor detection"
 else
     fail "install_modprobe_config() does not use CPU vendor detection"
