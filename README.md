@@ -4,7 +4,7 @@ After multiple searches I found a bunch of posts about loud fans for the DXP2800
 This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedora__ etc.
 
 > [!NOTE]
-> In cooperation with AI, we've upstreamed the driver for the it87 chipset for the latest linux kernel (April 2026), dropped old kernel support for kernel version 2.7.x since there will be no UGREEN NAS with such a low linux kernel available. Im not good with C so any help, bug fixings and reviews are highly welcome :-)
+> In cooperation with AI, we've upstreamed the driver for the it87 chipset for the latest linux kernel (April 2026), dropped old kernel support for kernel version 2.7.x since there will be no UGREEN NAS with such a low linux kernel available. I'm not good with C so any help, bug fixings and reviews are highly welcome :-)
 > 
 > Official kernel documentation for the it87 driver: [docs.kernel.org/hwmon/it87.html](https://docs.kernel.org/hwmon/it87.html)
 
