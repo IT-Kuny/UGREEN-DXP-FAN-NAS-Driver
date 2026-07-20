@@ -57,7 +57,8 @@ is_hwmon_vid_builtin() {
 # Warn when the installer is running on an AMD platform whose Super I/O chip is
 # not yet supported by the it87 driver.  Intel-based UGREEN NAS devices (DXP2800,
 # DXP8800, …) use the IT8613E; AMD-based GT models (DXP2800 GT, DXP4800 GT) use
-# a different chip (ID 0x2011) that the driver does not yet recognise.
+# a National Semiconductor (Texas Instruments) chip (ID 0x2011) that the driver
+# does not yet support.
 warn_amd_chip_compatibility() {
     local cpu_vendor
     cpu_vendor=$(get_cpu_vendor)
@@ -67,9 +68,9 @@ warn_amd_chip_compatibility() {
         log "------------------------------------------------------------"
         log "  AMD CPU detected: ${model_name}"
         log "  WARNING: AMD-based UGREEN GT models (DXP2800 GT, DXP4800 GT)"
-        log "  use a Super I/O chip (ID 0x2011) that is NOT yet supported"
-        log "  by the it87 driver.  Fan control will NOT work until that"
-        log "  chip is identified and a driver is written for it."
+        log "  use a National Semiconductor (Texas Instruments) Super I/O chip"
+        log "  (ID 0x2011) that is NOT yet supported by the it87 driver."
+        log "  Fan control will NOT work until a driver is written for it."
         log "  See: https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18"
         log "------------------------------------------------------------"
         log "  Installation will continue so the DKMS module is ready for"
