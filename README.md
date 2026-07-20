@@ -5,6 +5,8 @@ This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedo
 
 > [!NOTE]
 > In cooperation with AI, we've upstreamed the driver for the it87 chipset for the latest linux kernel (April 2026), dropped old kernel support for kernel version 2.7.x since there will be no UGREEN NAS with such a low linux kernel available. Im not good with C so any help, bug fixings and reviews are highly welcome :-)
+> 
+> Official kernel documentation for the it87 driver: [docs.kernel.org/hwmon/it87.html](https://docs.kernel.org/hwmon/it87.html)
 
 ---
 
@@ -367,7 +369,9 @@ The idea for this project has been brought by this [Reddit post](https://www.red
 That was written by 
  *  Copyright (C) 2001 Chris Gauthron
  *  Copyright (C) 2005-2010 Jean Delvare <jdelvare@suse.de>
-and archived by [a1wong](https://github.com/a1wong/it87)
+and archived by [a1wong](https://github.com/a1wong/it87).
+
+Official kernel documentation: [docs.kernel.org/hwmon/it87.html](https://docs.kernel.org/hwmon/it87.html)
 
 ## Results
 
