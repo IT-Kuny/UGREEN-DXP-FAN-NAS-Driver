@@ -9,7 +9,7 @@ This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedo
 ---
 
 > [!IMPORTANT]  
-> As it seems, does UGREEN utilize the it87 Chipset for each NAS slightly different. In that manner, I need your help, to extend the driver for all UGREEN NAS's. If you see your NAS not listed here, feel free to open an Issue with your NAS Model.
+> As it seems, does UGREEN utilize the it87 Chipset for each NAS slightly different. In that manner, I need your help, to extend the driver for all UGREEN NAS's. If you see your NAS not listed here, feel free to open an Issue with your NAS Model. Check out [DEVELOPER.md](DEVELOPER.md) for the diagnostics process — it tells you exactly what info I need to add support for your model.
 
 What's currently being supported:
 
@@ -408,6 +408,14 @@ Core 1:        +49.0°C  (high = +105.0°C, crit = +105.0°C)
 Core 2:        +49.0°C  (high = +105.0°C, crit = +105.0°C)
 Core 3:        +49.0°C  (high = +105.0°C, crit = +105.0°C)
 ```
+
+# Contributing & New Models
+
+Want to add support for a new UGREEN NAS model? Start with [DEVELOPER.md](DEVELOPER.md) — it covers the full diagnostics process: chip identification, Super I/O register dumps, OEM custom IDs, and what to include in your issue.
+
+No schematics, no datasheets — we figure it out the hard way.
+
+---
 
 # Bugs
 
