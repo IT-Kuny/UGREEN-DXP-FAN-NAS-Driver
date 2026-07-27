@@ -16,6 +16,7 @@ What's currently being supported:
 - DXP2800
 - DXP2800 GT (uses the same IT8613E Super I/O chip as the DXP2800; follow the same setup steps)
 - DXP8800
+- iDX6011 (IT8622E at ioreg 0x4e; OEM chip ID 0x5571; requires `force_activate=1` — see Troubleshooting section)
 
 What's currently being partially supported: 
 
@@ -287,6 +288,35 @@ sudo systemctl enable --now fancontrol
 > the DXP4800 fans continue spinning under hardware control during the
 > correlation test.  The correct strategy is to **accept** the offer to
 > switch pwm2/pwm3 to manual mode so that `fancontrol` can manage them.
+
+### iDX6011 — `it87` reports "not activated, skipping" at ioreg 0x4e
+
+On the UGREEN iDX6011 the IT8622E chip (OEM ID 0x5571) sits at ioreg 0x4e, and
+the BIOS leaves the EC logical device deactivated.  The driver detects the chip
+automatically via DMI and activates the logical device during probe.
+
+If automatic DMI detection does not trigger (e.g. on a custom kernel or if the
+system product name differs), add `force_activate=1` to the modprobe options:
+
+```bash
+sudo modprobe it87 ignore_resource_conflict=1 force_activate=1
+```
+
+To make this persistent, edit `/etc/modprobe.d/it87.conf` (or the equivalent
+for your distro) and add:
+
+```
+options it87 ignore_resource_conflict=1 force_activate=1
+```
+
+After loading the module, verify with `dmesg | grep -i it87`.  You should see:
+
+```
+it87: Activating EC logical device for chip IT8622E ioreg 0x4e
+it87: Found IT8622E chip at 0x..., revision N
+```
+
+Then run `sensors-detect` and `pwmconfig` as normal.
 
 ### DKMS module fails to build after kernel update
 
