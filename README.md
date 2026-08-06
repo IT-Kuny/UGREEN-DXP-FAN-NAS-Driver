@@ -22,6 +22,10 @@ What's currently being partially supported:
 - DXP6800Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/6) #6 for now)
 - DXP4800 (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/11) #11 for now — fan visibility works, active PWM control requires additional setup)
 
+What's currently under investigation / testing:
+
+- DXP6011 Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/23) #23 for now — reported on unRAID with an unknown Super I/O ID `0x5571` at `0x4e`; plain `modprobe it87 ignore_resource_conflict=1` still fails with `No such device`, so support is pending register-dump analysis and `force_id` testing)
+
 ---
 
 Here is a step by step guide on how to do this:
