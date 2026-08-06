@@ -10,7 +10,7 @@ RemainAfterExit=yes
 ExecStartPre=/sbin/depmod -a
 # Optional on purpose: succeeds on module systems, is harmless when built-in.
 ExecStartPre=-/sbin/modprobe hwmon-vid
-ExecStart=/sbin/modprobe it87 ignore_resource_conflict=1
+ExecStart=/bin/sh -c 'if grep -q "^vendor_id.*AuthenticAMD" /proc/cpuinfo 2>/dev/null; then /sbin/modprobe it87; else /sbin/modprobe it87 ignore_resource_conflict=1; fi'
 ExecStop=-/sbin/modprobe -r it87
 
 [Install]

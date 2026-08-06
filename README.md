@@ -4,7 +4,9 @@ After multiple searches I found a bunch of posts about loud fans for the DXP2800
 This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedora__ etc.
 
 > [!NOTE]
-> In cooperation with AI, we've upstreamed the driver for the it87 chipset for the latest linux kernel (April 2026), dropped old kernel support for kernel version 2.7.x since there will be no UGREEN NAS with such a low linux kernel available. Im not good with C so any help, bug fixings and reviews are highly welcome :-)
+> In cooperation with AI, we've upstreamed the driver for the it87 chipset for the latest linux kernel (April 2026), dropped old kernel support for kernel version 2.7.x since there will be no UGREEN NAS with such a low linux kernel available. I'm not good with C so any help, bug fixings and reviews are highly welcome :-)
+> 
+> Official kernel documentation for the it87 driver: [docs.kernel.org/hwmon/it87.html](https://docs.kernel.org/hwmon/it87.html)
 
 ---
 
@@ -14,13 +16,31 @@ This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedo
 What's currently being supported:
 
 - DXP2800
-- DXP2800 GT (uses the same IT8613E Super I/O chip as the DXP2800; follow the same setup steps)
 - DXP8800
 
 What's currently being partially supported: 
 
 - DXP6800Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/6) #6 for now)
 - DXP4800 (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/11) #11 for now — fan visibility works, active PWM control requires additional setup)
+
+What's **not yet supported** (under investigation):
+
+- DXP2800 GT / DXP4800 GT — these **GT** models use an **AMD Ryzen Embedded R2514** CPU (unlike the Intel N100 in the DXP2800) and a **different Super I/O chip** (a **National Semiconductor / Texas Instruments** chip with ID `0x2011` at I/O port `0x2e`).  The `it87` driver does **not** apply to this hardware. See [Issue #18](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18) for diagnostic details and progress.
+
+> [!NOTE]
+> **AMD-based models (DXP2800 GT / DXP4800 GT):** On these, the LED MCU sits on a
+> **Synopsys DesignWare** I2C controller (ACPI `AMDI0010`) rather than the Intel
+> *SMBus I801 adapter*. The mainline `i2c-designware-platform` / `i2c-designware-core`
+> drivers must be loaded for `/dev/i2c-*` to exist:
+> ```
+> modprobe i2c-designware-platform   # pulls in i2c-designware-core
+> ```
+> Most general-purpose distros (Debian, Proxmox VE, Arch, Fedora …) ship these as
+> modules and the `modprobe` above is all you need. Where they are disabled, enable
+> `CONFIG_I2C_DESIGNWARE_CORE=m` and `CONFIG_I2C_DESIGNWARE_PLATFORM=m` and build
+> the modules for your kernel. See also
+> [miskcoo/ugreen_leds_controller#100](https://github.com/miskcoo/ugreen_leds_controller/pull/100)
+> for LED MCU framing details on these models.
 
 ---
 
@@ -334,6 +354,27 @@ sudo make install
 After a successful build, continue with the rest of the
 [Install Guide (Manual)](#install-guide-manual).
 
+### TrueNAS SCALE — `it87: disagrees about version of symbol module_layout`
+
+If `dmesg` shows:
+
+```
+it87: disagrees about version of symbol module_layout
+```
+
+and `modprobe it87` fails with `Exec format error`, this means a **pre-built**
+`it87.ko` binary is being loaded that was not compiled for the running TrueNAS
+SCALE kernel.  This almost always means the DKMS build described above was
+**killed before it completed** (see the `Killed` entry in `make.log`).
+
+The fix is to complete a successful DKMS build first using the single-job
+workaround above.  Once the module is correctly compiled against the TrueNAS
+kernel headers (`production+truenas`), the symbol version mismatch disappears.
+
+> [!NOTE]
+> This error is **not** related to the `ignore_resource_conflict=1` option or
+> missing `hwmon-vid`; it is purely a build-vs-kernel mismatch.
+
 ### Why did I do that?
 
 The idea for this project has been brought by this [Reddit post](https://www.reddit.com/r/unRAID/comments/1dzep0s/how_to_configure_fan_control_ugreen_nas/)
@@ -343,7 +384,9 @@ The idea for this project has been brought by this [Reddit post](https://www.red
 That was written by 
  *  Copyright (C) 2001 Chris Gauthron
  *  Copyright (C) 2005-2010 Jean Delvare <jdelvare@suse.de>
-and archived by [a1wong](https://github.com/a1wong/it87)
+and archived by [a1wong](https://github.com/a1wong/it87).
+
+Official kernel documentation: [docs.kernel.org/hwmon/it87.html](https://docs.kernel.org/hwmon/it87.html)
 
 ## Results
 

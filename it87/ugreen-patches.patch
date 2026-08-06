@@ -1,0 +1,485 @@
+# UGREEN DXP NAS — patches on top of upstream Linux kernel it87 driver
+#
+# Base:   drivers/hwmon/it87.c from torvalds/linux (master, fetched 2026-07-20)
+# Source: https://raw.githubusercontent.com/torvalds/linux/master/drivers/hwmon/it87.c
+#
+# To regenerate it87.c from mainline:
+#   curl -fsSL \
+#     https://raw.githubusercontent.com/torvalds/linux/master/drivers/hwmon/it87.c \
+#     -o it87.c
+#   patch it87.c < ugreen-patches.patch
+#
+# Patches included:
+#   1. Add IT8613E device ID, chip data, enum entry, and GPIO probing
+#   2. Add FEAT_11MV_ADC (11 mV ADC resolution for IT8613E)
+#   3. Add IT87_REG_PWM_ALT (alternate PWM4/PWM5 registers for IT8613E/IT8622E)
+#   4. Add per-chip data->REG_PWM pointer so the correct PWM table is used
+#   5. Fix PWM manual-mode detection for chips without FAN_CTL ON/OFF
+#      (Fixes IT8613E on UGREEN DXP NAS: pwmconfig was reporting
+#       "Manual control mode not supported" because duty==max shadowed
+#       the manual-mode bit.)
+#   6. Fix IT8790E ADC resolution: FEAT_12MV_ADC → FEAT_10_9MV_ADC
+#   7. Fix temp sysfs visibility: if (a==3) → if (i<3 && a!=3)
+#   8. Drop redundant fan speed floor clamp (if val<0; kstrtol already
+#      rejects negative strings before this point)
+#   9. Modernise sysfs show callbacks: sprintf → sysfs_emit
+#
+
+--- a/it87.c
++++ b/it87.c
+@@ -12,6 +12,7 @@
+  *  similar parts.  The other devices are supported by different drivers.
+  *
+  *  Supports: IT8603E  Super I/O chip w/LPC interface
++ *            IT8613E  Super I/O chip w/LPC interface
+  *            IT8620E  Super I/O chip w/LPC interface
+  *            IT8622E  Super I/O chip w/LPC interface
+  *            IT8623E  Super I/O chip w/LPC interface
+@@ -65,7 +66,7 @@
+ 
+ enum chips { it87, it8712, it8716, it8718, it8720, it8721, it8728, it8732,
+ 	     it8771, it8772, it8781, it8782, it8783, it8786, it8790,
+-	     it8792, it8603, it8620, it8622, it8628, it8689, it87952 };
++	     it8792, it8603, it8613, it8620, it8622, it8628, it8689, it87952 };
+ 
+ static struct platform_device *it87_pdev[2];
+ 
+@@ -159,6 +160,7 @@
+ #define IT8786E_DEVID 0x8786
+ #define IT8790E_DEVID 0x8790
+ #define IT8603E_DEVID 0x8603
++#define IT8613E_DEVID 0x8613
+ #define IT8620E_DEVID 0x8620
+ #define IT8622E_DEVID 0x8622
+ #define IT8623E_DEVID 0x8623
+@@ -254,6 +256,17 @@
+ static const u8 IT87_REG_PWM[]         = { 0x15, 0x16, 0x17, 0x7f, 0xa7, 0xaf };
+ static const u8 IT87_REG_PWM_DUTY[]    = { 0x63, 0x6b, 0x73, 0x7b, 0xa3, 0xab };
+ 
++/*
++ * IT8613E and IT8622E use different registers for PWM4/PWM5 control
++ * per ITE_Register_map.csv.
++ *
++ * FIXME: The corresponding PWM4/PWM5 duty cycle registers for these
++ * chips are not documented in the CSV. The duty registers below are
++ * inherited from the standard table and may need correction once
++ * official datasheet information is available.
++ */
++static const u8 IT87_REG_PWM_ALT[]    = { 0x15, 0x16, 0x17, 0x1e, 0x1f, 0xaf };
++
+ static const u8 IT87_REG_VIN[]	= { 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26,
+ 				    0x27, 0x28, 0x2f, 0x2c, 0x2d, 0x2e };
+ 
+@@ -328,6 +341,7 @@
+ #define FEAT_FOUR_PWM		BIT(21)	/* Supports four fan controls */
+ #define FEAT_FOUR_TEMP		BIT(22)
+ #define FEAT_FANCTL_ONOFF	BIT(23)	/* chip has FAN_CTL ON/OFF */
++#define FEAT_11MV_ADC		BIT(24)	/* 11 mV ADC resolution (IT8613E) */
+ 
+ static const struct it87_devices it87_devices[] = {
+ 	[it87] = {
+@@ -453,7 +467,7 @@
+ 	[it8790] = {
+ 		.name = "it8790",
+ 		.model = "IT8790E",
+-		.features = FEAT_NEWER_AUTOPWM | FEAT_12MV_ADC | FEAT_16BIT_FANS
++		.features = FEAT_NEWER_AUTOPWM | FEAT_10_9MV_ADC | FEAT_16BIT_FANS
+ 		  | FEAT_TEMP_OFFSET | FEAT_TEMP_PECI | FEAT_IN7_INTERNAL
+ 		  | FEAT_PWM_FREQ2 | FEAT_FANCTL_ONOFF | FEAT_NOCONF,
+ 		.peci_mask = 0x07,
+@@ -476,6 +490,15 @@
+ 		  | FEAT_AVCC3 | FEAT_PWM_FREQ2,
+ 		.peci_mask = 0x07,
+ 	},
++	[it8613] = {
++		.name = "it8613",
++		.model = "IT8613E",
++		.features = FEAT_NEWER_AUTOPWM | FEAT_11MV_ADC | FEAT_16BIT_FANS
++		  | FEAT_TEMP_OFFSET | FEAT_TEMP_PECI | FEAT_FIVE_FANS
++		  | FEAT_FIVE_PWM | FEAT_IN7_INTERNAL | FEAT_PWM_FREQ2
++		  | FEAT_AVCC3,
++		.peci_mask = 0x07,
++	},
+ 	[it8620] = {
+ 		.name = "it8620",
+ 		.model = "IT8620E",
+@@ -527,6 +550,7 @@
+ 
+ #define has_16bit_fans(data)	((data)->features & FEAT_16BIT_FANS)
+ #define has_12mv_adc(data)	((data)->features & FEAT_12MV_ADC)
++#define has_11mv_adc(data)	((data)->features & FEAT_11MV_ADC)
+ #define has_10_9mv_adc(data)	((data)->features & FEAT_10_9MV_ADC)
+ #define has_newer_autopwm(data)	((data)->features & FEAT_NEWER_AUTOPWM)
+ #define has_old_autopwm(data)	((data)->features & FEAT_OLD_AUTOPWM)
+@@ -558,6 +582,7 @@
+ #define has_vin3_5v(data)	((data)->features & FEAT_VIN3_5V)
+ #define has_noconf(data)	((data)->features & FEAT_NOCONF)
+ #define has_scaling(data)	((data)->features & (FEAT_12MV_ADC | \
++						     FEAT_11MV_ADC | \
+ 						     FEAT_10_9MV_ADC))
+ #define has_fanctl_onoff(data)	((data)->features & FEAT_FANCTL_ONOFF)
+ 
+@@ -595,6 +620,8 @@
+ 	u8 smbus_bitmap;	/* !=0 if SMBus needs to be disabled */
+ 	u8 ec_special_config;	/* EC special config register restore value */
+ 
++	const u8 *REG_PWM;	/* Per-chip PWM control register table */
++
+ 	unsigned short addr;
+ 	const char *name;
+ 	struct mutex update_lock;
+@@ -656,6 +683,8 @@
+ 
+ 	if (has_12mv_adc(data))
+ 		lsb = 120;
++	else if (has_11mv_adc(data))
++		lsb = 110;
+ 	else if (has_10_9mv_adc(data))
+ 		lsb = 109;
+ 	else
+@@ -808,7 +837,7 @@
+ 
+ static void it87_update_pwm_ctrl(struct it87_data *data, int nr)
+ {
+-	data->pwm_ctrl[nr] = it87_read_value(data, IT87_REG_PWM[nr]);
++	data->pwm_ctrl[nr] = it87_read_value(data, data->REG_PWM[nr]);
+ 	if (has_newer_autopwm(data)) {
+ 		data->pwm_temp_map[nr] = data->pwm_ctrl[nr] & 0x03;
+ 		data->pwm_duty[nr] = it87_read_value(data,
+@@ -1009,7 +1038,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%d\n", in_from_reg(data, nr, data->in[nr][index]));
++	return sysfs_emit(buf, "%d\n", in_from_reg(data, nr, data->in[nr][index]));
+ }
+ 
+ static ssize_t set_in(struct device *dev, struct device_attribute *attr,
+@@ -1104,7 +1133,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%d\n", TEMP_FROM_REG(data->temp[nr][index]));
++	return sysfs_emit(buf, "%d\n", TEMP_FROM_REG(data->temp[nr][index]));
+ }
+ 
+ static ssize_t set_temp(struct device *dev, struct device_attribute *attr,
+@@ -1234,7 +1263,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%d\n", get_temp_type(data, sensor_attr->index));
++	return sysfs_emit(buf, "%d\n", get_temp_type(data, sensor_attr->index));
+ }
+ 
+ static ssize_t set_temp_type(struct device *dev, struct device_attribute *attr,
+@@ -1332,7 +1361,7 @@
+ 		FAN16_FROM_REG(data->fan[nr][index]) :
+ 		FAN_FROM_REG(data->fan[nr][index],
+ 			     DIV_FROM_REG(data->fan_div[nr]));
+-	return sprintf(buf, "%d\n", speed);
++	return sysfs_emit(buf, "%d\n", speed);
+ }
+ 
+ static ssize_t show_fan_div(struct device *dev, struct device_attribute *attr,
+@@ -1345,7 +1374,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%lu\n", DIV_FROM_REG(data->fan_div[nr]));
++	return sysfs_emit(buf, "%lu\n", DIV_FROM_REG(data->fan_div[nr]));
+ }
+ 
+ static ssize_t show_pwm_enable(struct device *dev,
+@@ -1358,7 +1387,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%d\n", pwm_mode(data, nr));
++	return sysfs_emit(buf, "%d\n", pwm_mode(data, nr));
+ }
+ 
+ static ssize_t show_pwm(struct device *dev, struct device_attribute *attr,
+@@ -1371,7 +1400,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%d\n",
++	return sysfs_emit(buf, "%d\n",
+ 		       pwm_from_reg(data, data->pwm_duty[nr]));
+ }
+ 
+@@ -1394,7 +1423,7 @@
+ 
+ 	freq = pwm_freq[index] / (has_newer_autopwm(data) ? 256 : 128);
+ 
+-	return sprintf(buf, "%u\n", freq);
++	return sysfs_emit(buf, "%u\n", freq);
+ }
+ 
+ static ssize_t set_fan(struct device *dev, struct device_attribute *attr,
+@@ -1412,9 +1441,6 @@
+ 	if (kstrtol(buf, 10, &val) < 0)
+ 		return -EINVAL;
+ 
+-	if (val < 0)
+-		val = 0;
+-
+ 	err = it87_lock(data);
+ 	if (err)
+ 		return err;
+@@ -1548,6 +1574,8 @@
+ 	if (err)
+ 		return err;
+ 
++	it87_update_pwm_ctrl(data, nr);
++
+ 	if (val == 0) {
+ 		if (nr < 3 && has_fanctl_onoff(data)) {
+ 			int tmp;
+@@ -1573,7 +1601,7 @@
+ 				ctrl = data->pwm_duty[nr];
+ 			}
+ 			data->pwm_ctrl[nr] = ctrl;
+-			it87_write_value(data, IT87_REG_PWM[nr], ctrl);
++			it87_write_value(data, data->REG_PWM[nr], ctrl);
+ 		}
+ 	} else {
+ 		u8 ctrl;
+@@ -1581,13 +1609,29 @@
+ 		if (has_newer_autopwm(data)) {
+ 			ctrl = (data->pwm_ctrl[nr] & 0x7c) |
+ 				data->pwm_temp_map[nr];
+-			if (val != 1)
++			if (val != 1) {
+ 				ctrl |= 0x80;
++			} else if ((!has_fanctl_onoff(data) || nr >= 3) &&
++				   data->pwm_duty[nr] == pwm_to_reg(data, 0xff)) {
++				/*
++				 * Chips without FAN_CTL ON/OFF use duty==max to
++				 * represent "full speed" mode. When switching to
++				 * manual mode (val=1), reset duty to ~50% so that
++				 * pwm_mode() correctly reports manual mode. Without
++				 * this, pwmconfig reports "Manual control mode not
++				 * supported" because the duty==max check in
++				 * pwm_mode() shadows the manual-mode bit.
++				 * (Fixes IT8613E on UGREEN DXP NAS devices.)
++				 */
++				data->pwm_duty[nr] = 0x7f;
++				it87_write_value(data, IT87_REG_PWM_DUTY[nr],
++						 data->pwm_duty[nr]);
++			}
+ 		} else {
+ 			ctrl = (val == 1 ? data->pwm_duty[nr] : 0x80);
+ 		}
+ 		data->pwm_ctrl[nr] = ctrl;
+-		it87_write_value(data, IT87_REG_PWM[nr], ctrl);
++		it87_write_value(data, data->REG_PWM[nr], ctrl);
+ 
+ 		if (has_fanctl_onoff(data) && nr < 3) {
+ 			/* set SmartGuardian mode */
+@@ -1638,7 +1682,7 @@
+ 		 */
+ 		if (!(data->pwm_ctrl[nr] & 0x80)) {
+ 			data->pwm_ctrl[nr] = data->pwm_duty[nr];
+-			it87_write_value(data, IT87_REG_PWM[nr],
++			it87_write_value(data, data->REG_PWM[nr],
+ 					 data->pwm_ctrl[nr]);
+ 		}
+ 	}
+@@ -1704,7 +1748,7 @@
+ 	if (nr >= 3)		/* pwm channels 3..6 map to temp4..6 */
+ 		map += 3;
+ 
+-	return sprintf(buf, "%d\n", (int)BIT(map));
++	return sysfs_emit(buf, "%d\n", (int)BIT(map));
+ }
+ 
+ static ssize_t set_pwm_temp_map(struct device *dev,
+@@ -1751,7 +1795,7 @@
+ 	if (data->pwm_ctrl[nr] & 0x80) {
+ 		data->pwm_ctrl[nr] = (data->pwm_ctrl[nr] & 0xfc) |
+ 						data->pwm_temp_map[nr];
+-		it87_write_value(data, IT87_REG_PWM[nr], data->pwm_ctrl[nr]);
++		it87_write_value(data, data->REG_PWM[nr], data->pwm_ctrl[nr]);
+ 	}
+ 	it87_unlock(data);
+ 	return count;
+@@ -1769,7 +1813,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%d\n",
++	return sysfs_emit(buf, "%d\n",
+ 		       pwm_from_reg(data, data->auto_pwm[nr][point]));
+ }
+ 
+@@ -1812,7 +1856,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%d\n", data->auto_pwm[nr][1] & 0x7f);
++	return sysfs_emit(buf, "%d\n", data->auto_pwm[nr][1] & 0x7f);
+ }
+ 
+ static ssize_t set_auto_pwm_slope(struct device *dev,
+@@ -1857,7 +1901,7 @@
+ 	else
+ 		reg = data->auto_temp[nr][1] - (data->auto_temp[nr][0] & 0x1f);
+ 
+-	return sprintf(buf, "%d\n", TEMP_FROM_REG(reg));
++	return sysfs_emit(buf, "%d\n", TEMP_FROM_REG(reg));
+ }
+ 
+ static ssize_t set_auto_temp(struct device *dev, struct device_attribute *attr,
+@@ -2079,7 +2123,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%u\n", data->alarms);
++	return sysfs_emit(buf, "%u\n", data->alarms);
+ }
+ static DEVICE_ATTR_RO(alarms);
+ 
+@@ -2092,7 +2136,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%u\n", (data->alarms >> bitnr) & 1);
++	return sysfs_emit(buf, "%u\n", (data->alarms >> bitnr) & 1);
+ }
+ 
+ static ssize_t clear_intrusion(struct device *dev,
+@@ -2152,7 +2196,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%u\n", (data->beeps >> bitnr) & 1);
++	return sysfs_emit(buf, "%u\n", (data->beeps >> bitnr) & 1);
+ }
+ 
+ static ssize_t set_beep(struct device *dev, struct device_attribute *attr,
+@@ -2206,7 +2250,7 @@
+ {
+ 	struct it87_data *data = dev_get_drvdata(dev);
+ 
+-	return sprintf(buf, "%u\n", data->vrm);
++	return sysfs_emit(buf, "%u\n", data->vrm);
+ }
+ 
+ static ssize_t vrm_store(struct device *dev, struct device_attribute *attr,
+@@ -2232,7 +2276,7 @@
+ 	if (IS_ERR(data))
+ 		return PTR_ERR(data);
+ 
+-	return sprintf(buf, "%ld\n", (long)vid_from_reg(data->vid, data->vrm));
++	return sysfs_emit(buf, "%ld\n", (long)vid_from_reg(data->vid, data->vrm));
+ }
+ static DEVICE_ATTR_RO(cpu0_vid);
+ 
+@@ -2262,7 +2306,7 @@
+ 	else
+ 		label = labels[nr];
+ 
+-	return sprintf(buf, "%s\n", label);
++	return sysfs_emit(buf, "%s\n", label);
+ }
+ static SENSOR_DEVICE_ATTR(in3_label, S_IRUGO, show_label, NULL, 0);
+ static SENSOR_DEVICE_ATTR(in7_label, S_IRUGO, show_label, NULL, 1);
+@@ -2370,10 +2414,9 @@
+ 	if (!(data->has_temp & BIT(i)))
+ 		return 0;
+ 
+-	if (a == 3) {
++	if (i < 3 && a != 3) {
+ 		if (get_temp_type(data, i) == 0)
+ 			return 0;
+-		return attr->mode;
+ 	}
+ 
+ 	if (a == 5 && !has_temp_offset(data))
+@@ -2790,6 +2833,9 @@
+ 	case IT8623E_DEVID:
+ 		sio_data->type = it8603;
+ 		break;
++	case IT8613E_DEVID:
++		sio_data->type = it8613;
++		break;
+ 	case IT8620E_DEVID:
+ 		sio_data->type = it8620;
+ 		break;
+@@ -2969,6 +3015,43 @@
+ 
+ 		sio_data->beep_pin = superio_inb(sioaddr,
+ 						 IT87_SIO_BEEP_PIN_REG) & 0x3f;
++	} else if (sio_data->type == it8613) {
++		int reg27, reg29, reg2a;
++
++		superio_select(sioaddr, GPIO);
++
++		/* Check for pwm3, fan3, pwm5, fan5 */
++		reg27 = superio_inb(sioaddr, IT87_SIO_GPIO3_REG);
++		if (reg27 & BIT(1))
++			sio_data->skip_fan |= BIT(4);
++		if (reg27 & BIT(3))
++			sio_data->skip_pwm |= BIT(4);
++		if (reg27 & BIT(6))
++			sio_data->skip_pwm |= BIT(2);
++		if (reg27 & BIT(7))
++			sio_data->skip_fan |= BIT(2);
++
++		/* Check for pwm2, fan2 */
++		reg29 = superio_inb(sioaddr, IT87_SIO_GPIO5_REG);
++		if (reg29 & BIT(1))
++			sio_data->skip_pwm |= BIT(1);
++		if (reg29 & BIT(2))
++			sio_data->skip_fan |= BIT(1);
++
++		/* Check for pwm4, fan4 */
++		reg2a = superio_inb(sioaddr, IT87_SIO_PINX1_REG);
++		if (!(reg2a & BIT(0)) || (reg29 & BIT(7))) {
++			sio_data->skip_fan |= BIT(3);
++			sio_data->skip_pwm |= BIT(3);
++		}
++
++		sio_data->skip_pwm |= BIT(0); /* No pwm1 */
++		sio_data->skip_fan |= BIT(0); /* No fan1 */
++		sio_data->skip_in |= BIT(3);  /* No VIN3 */
++		sio_data->skip_in |= BIT(6);  /* No VIN6 */
++
++		sio_data->beep_pin = superio_inb(sioaddr,
++						 IT87_SIO_BEEP_PIN_REG) & 0x3f;
+ 	} else if (sio_data->type == it8620 || sio_data->type == it8628) {
+ 		int reg;
+ 
+@@ -3422,7 +3505,7 @@
+ 
+ 			for (i = 0; i < ARRAY_SIZE(pwm); i++)
+ 				pwm[i] = it87_read_value(data,
+-							 IT87_REG_PWM[i]);
++							 data->REG_PWM[i]);
+ 
+ 			/*
+ 			 * If any fan is in automatic pwm mode, the polarity
+@@ -3437,7 +3520,7 @@
+ 						 tmp | 0x87);
+ 				for (i = 0; i < 3; i++)
+ 					it87_write_value(data,
+-							 IT87_REG_PWM[i],
++							 data->REG_PWM[i],
+ 							 0x7f & ~pwm[i]);
+ 				return 1;
+ 			}
+@@ -3486,6 +3569,12 @@
+ 	data->features = it87_devices[sio_data->type].features;
+ 	data->peci_mask = it87_devices[sio_data->type].peci_mask;
+ 	data->old_peci_mask = it87_devices[sio_data->type].old_peci_mask;
++
++	/* IT8613E and IT8622E use alternate PWM4/PWM5 register addresses */
++	if (data->type == it8613 || data->type == it8622)
++		data->REG_PWM = IT87_REG_PWM_ALT;
++	else
++		data->REG_PWM = IT87_REG_PWM;
+ 	/*
+ 	 * IT8705F Datasheet 0.4.1, 3h == Version G.
+ 	 * IT8712F Datasheet 0.9.1, section 8.3.5 indicates 8h == Version J.

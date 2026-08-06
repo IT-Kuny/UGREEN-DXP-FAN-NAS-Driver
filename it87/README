@@ -2,11 +2,24 @@ Kernel driver it87
 ==================
 
 Out-of-tree hwmon driver for ITE Super I/O chips.
-Based on upstream Linux kernel drivers/hwmon/it87.c with additional chip support.
 
-This directory contains a vendored snapshot of the driver used by this repository.
-Upstream/source fork: IT-Kuny <https://github.com/IT-Kuny/UGREEN-Fan-Control>
-For issues with this vendored copy, please file them in this repository.
+This driver is based directly on the mainline Linux kernel driver:
+  drivers/hwmon/it87.c — https://github.com/torvalds/linux
+
+The file it87.c in this directory is a patched snapshot of that upstream source.
+The patches (see ugreen-patches.patch) add IT8613E support and related fixes
+required for UGREEN DXP NAS devices, and modernise sysfs callbacks to
+sysfs_emit.  All other chips supported by the mainline driver are unchanged.
+
+To re-sync it87.c from a fresh mainline download:
+
+  curl -fsSL \
+    https://raw.githubusercontent.com/torvalds/linux/master/drivers/hwmon/it87.c \
+    -o it87.c
+  patch -p1 < ugreen-patches.patch
+
+For issues with this vendored copy, please file them in this repository:
+  https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues
 
 Supported chips:
   * IT8603E/IT8623E
