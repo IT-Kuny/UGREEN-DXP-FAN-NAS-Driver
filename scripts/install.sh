@@ -83,6 +83,7 @@ warn_amd_chip_compatibility() {
             log "  Installation will continue so the DKMS module is ready for future use."
             log "------------------------------------------------------------"
         fi
+    fi
 }
 
 check_dependencies() {
