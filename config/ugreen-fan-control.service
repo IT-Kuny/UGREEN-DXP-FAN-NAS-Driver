@@ -1,8 +1,8 @@
 [Unit]
 Description=UGREEN DXP Automatic Fan Control
 Documentation=https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver
-After=it87-driver.service
-Requires=it87-driver.service
+After=ugreen-it87.service
+Requires=ugreen-it87.service
 
 [Service]
 Type=simple

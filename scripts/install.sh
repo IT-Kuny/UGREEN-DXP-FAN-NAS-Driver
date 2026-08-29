@@ -252,9 +252,6 @@ EOF
 install_services() {
     log "Installing systemd services..."
 
-    # Install the config guard script
-    install -m 755 "$REPO_DIR/scripts/fancontrol-config-guard.sh" /usr/local/sbin/fancontrol-config-guard.sh
-
     # Install the Bash fan control daemon
     install -m 755 "$REPO_DIR/scripts/ugreen-fan-control.sh" /usr/local/sbin/ugreen-fan-control.sh
 
@@ -268,37 +265,15 @@ install_services() {
     fi
 
     # Install systemd service files
-    cp "$REPO_DIR/config/it87-driver.service" /etc/systemd/system/
-    cp "$REPO_DIR/config/fancontrol-config-guard.service" /etc/systemd/system/
+    cp "$REPO_DIR/config/ugreen-it87.service" /etc/systemd/system/
     cp "$REPO_DIR/config/ugreen-fan-control.service" /etc/systemd/system/
-
-    # Create fancontrol drop-in to ensure proper service ordering.
-    # Uses a uniquely named file to avoid overwriting admin drop-ins.
-    mkdir -p /etc/systemd/system/fancontrol.service.d
-    cat > /etc/systemd/system/fancontrol.service.d/ugreen-ordering.conf << 'EOF'
-[Unit]
-After=it87-driver.service fancontrol-config-guard.service
-Requires=it87-driver.service
-Wants=fancontrol-config-guard.service
-EOF
 
     # Reload systemd, enable and start all services
     systemctl daemon-reload
-    systemctl enable --now it87-driver.service
-    systemctl enable --now fancontrol-config-guard.service
+    systemctl enable --now ugreen-it87.service
     systemctl enable --now ugreen-fan-control.service
 
     log "Systemd services installed, enabled, and started"
-}
-
-create_initial_backup() {
-    if [ -f /etc/fancontrol ]; then
-        log "Creating initial backup of fancontrol configuration..."
-        /usr/local/sbin/fancontrol-config-guard.sh backup || true
-    else
-        log "No existing fancontrol configuration found"
-        log "Run 'sudo pwmconfig' to create one after installation"
-    fi
 }
 
 print_status() {
