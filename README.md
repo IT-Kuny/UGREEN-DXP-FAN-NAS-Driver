@@ -393,6 +393,7 @@ systemctl status ugreen-fan-control.service
 
 Example `sensors` output with the driver loaded:
 it8613-isa-0a30
+```
 Adapter: ISA adapter
 in0:         660.00 mV (min =  +0.00 V, max =  +2.81 V)
 in1:           1.12 V  (min =  +0.00 V, max =  +2.81 V)
