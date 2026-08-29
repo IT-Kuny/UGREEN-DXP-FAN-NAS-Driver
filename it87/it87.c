@@ -710,7 +710,7 @@ struct it87_dmi_data {
 };
 
 /* Global for results from DMI matching, if needed */
-static struct it87_dmi_data *dmi_data;
+static const struct it87_dmi_data *dmi_data;
 
 static bool it5571_dxp6011_pro_board(void)
 {
@@ -4229,7 +4229,7 @@ static int it87_dmi_cb(const struct dmi_system_id *dmi_entry)
  * I use the board name string as the trigger in case
  * the same board is ever used in other systems.
  */
-static struct it87_dmi_data nvidia_fn68pt = {
+static const struct it87_dmi_data nvidia_fn68pt = {
 	.skip_pwm = BIT(1),
 };
 
@@ -4238,7 +4238,7 @@ static struct it87_dmi_data nvidia_fn68pt = {
  * The BIOS leaves the EC logical device (LDN 4) deactivated; we must
  * write 0x01 to IT87_ACT_REG to bring it up before the driver can use it.
  */
-static struct it87_dmi_data ugreen_idx6011 = {
+static const struct it87_dmi_data ugreen_idx6011 = {
 	.force_activate = true,
 };
 
@@ -4249,7 +4249,7 @@ static struct it87_dmi_data ugreen_idx6011 = {
 			DMI_EXACT_MATCH(DMI_BOARD_VENDOR, vendor), \
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, name), \
 		}, \
-		.driver_data = data, \
+		.driver_data = (void *)(data), \
 	}
 
 #define IT87_DMI_MATCH_SYS(vendor, product, cb, data) \
@@ -4259,7 +4259,7 @@ static struct it87_dmi_data ugreen_idx6011 = {
 			DMI_EXACT_MATCH(DMI_SYS_VENDOR, vendor), \
 			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, product), \
 		}, \
-		.driver_data = data, \
+		.driver_data = (void *)(data), \
 	}
 
 static const struct dmi_system_id it87_dmi_table[] __initconst = {
