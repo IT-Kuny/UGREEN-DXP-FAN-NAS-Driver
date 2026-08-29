@@ -43,7 +43,7 @@ package() {
 }
 EOF
 
-tar -C /tmp/payload -czf /tmp/aports/ugreen-it87-dkms/ugreen-it87-dkms-$PKGVER.tar.gz it87-$PKGVER
+tar -C /tmp/payload -czf /tmp/aports/ugreen-it87-dkms/ugreen-it87-dkms-$ALPVER.tar.gz it87-$PKGVER
 chown -R builduser /tmp/aports /tmp/payload "${OUT_DIR:-/out}"
 
 # Local signing key (untrusted, needed for abuild to produce an apk)
