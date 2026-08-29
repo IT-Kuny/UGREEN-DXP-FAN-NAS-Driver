@@ -4,7 +4,9 @@ After multiple searches I found a bunch of posts about loud fans for the DXP2800
 This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedora__ etc.
 
 > [!NOTE]
-> In cooperation with AI, we've upstreamed the driver for the it87 chipset for the latest linux kernel (April 2026), dropped old kernel support for kernel version 2.7.x since there will be no UGREEN NAS with such a low linux kernel available. Im not good with C so any help, bug fixings and reviews are highly welcome :-)
+> In cooperation with AI, we've upstreamed the driver for the it87 chipset for the latest linux kernel (April 2026), dropped old kernel support for kernel version 2.7.x since there will be no UGREEN NAS with such a low linux kernel available. I'm not good with C so any help, bug fixings and reviews are highly welcome :-)
+>
+> Official kernel documentation for the it87 driver: [docs.kernel.org/hwmon/it87.html](https://docs.kernel.org/hwmon/it87.html)
 
 ---
 
@@ -14,8 +16,8 @@ This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedo
 What's currently being supported:
 
 - DXP2800
-- DXP2800 GT (uses the same IT8613E Super I/O chip as the DXP2800; follow the same setup steps)
 - DXP8800
+- iDX6011 (IT8622E at ioreg 0x4e; OEM chip ID 0x5571; requires `force_activate=1` — see Troubleshooting section)
 
 What's currently being partially supported: 
 
@@ -25,6 +27,25 @@ What's currently being partially supported:
 What's currently under investigation / testing:
 
 - DXP6011 Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/23) #23 for now — reported on unRAID with an unknown Super I/O ID `0x5571` at `0x4e`; plain `modprobe it87 ignore_resource_conflict=1` still fails with `No such device`, so support is pending register-dump analysis and `force_id` testing. UGREEN's published `kernel-6.12` GPL tree also contains a vendor `drivers/ugreen/` area that references `ug_idx6011pro-sio.o` and `leds-mcu.o`, and `ug_it55pro_functions.c` identifies the vendor product string as `iDX6011 Pro` and the chip as `ITE5571`, with OEM fan-control code paths that are useful reverse-engineering material even though the source drop appears incomplete.)
+
+What's **not yet supported** (under investigation):
+
+- DXP2800 GT / DXP4800 GT — these **GT** models use an **AMD Ryzen Embedded R2514** CPU (unlike the Intel N100 in the DXP2800) and a **different Super I/O chip** (a **National Semiconductor / Texas Instruments** chip with ID `0x2011` at I/O port `0x2e`).  The `it87` driver does **not** apply to this hardware. See [Issue #18](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18) for diagnostic details and progress.
+
+> [!NOTE]
+> **AMD-based models (DXP2800 GT / DXP4800 GT):** On these, the LED MCU sits on a
+> **Synopsys DesignWare** I2C controller (ACPI `AMDI0010`) rather than the Intel
+> *SMBus I801 adapter*. The mainline `i2c-designware-platform` / `i2c-designware-core`
+> drivers must be loaded for `/dev/i2c-*` to exist:
+> ```
+> modprobe i2c-designware-platform   # pulls in i2c-designware-core
+> ```
+> Most general-purpose distros (Debian, Proxmox VE, Arch, Fedora …) ship these as
+> modules and the `modprobe` above is all you need. Where they are disabled, enable
+> `CONFIG_I2C_DESIGNWARE_CORE=m` and `CONFIG_I2C_DESIGNWARE_PLATFORM=m` and build
+> the modules for your kernel. See also
+> [miskcoo/ugreen_leds_controller#100](https://github.com/miskcoo/ugreen_leds_controller/pull/100)
+> for LED MCU framing details on these models.
 
 ---
 
@@ -292,6 +313,35 @@ sudo systemctl enable --now fancontrol
 > correlation test.  The correct strategy is to **accept** the offer to
 > switch pwm2/pwm3 to manual mode so that `fancontrol` can manage them.
 
+### iDX6011 — `it87` reports "not activated, skipping" at ioreg 0x4e
+
+On the UGREEN iDX6011 the IT8622E chip (OEM ID 0x5571) sits at ioreg 0x4e, and
+the BIOS leaves the EC logical device deactivated.  The driver detects the chip
+automatically via DMI and activates the logical device during probe.
+
+If automatic DMI detection does not trigger (e.g. on a custom kernel or if the
+system product name differs), add `force_activate=1` to the modprobe options:
+
+```bash
+sudo modprobe it87 ignore_resource_conflict=1 force_activate=1
+```
+
+To make this persistent, edit `/etc/modprobe.d/it87.conf` (or the equivalent
+for your distro) and add:
+
+```
+options it87 ignore_resource_conflict=1 force_activate=1
+```
+
+After loading the module, verify with `dmesg | grep -i it87`.  You should see:
+
+```
+it87: Activating EC logical device for chip IT8622E ioreg 0x4e
+it87: Found IT8622E chip at 0x..., revision N
+```
+
+Then run `sensors-detect` and `pwmconfig` as normal.
+
 ### DKMS module fails to build after kernel update
 
 ```bash
@@ -338,6 +388,27 @@ sudo make install
 After a successful build, continue with the rest of the
 [Install Guide (Manual)](#install-guide-manual).
 
+### TrueNAS SCALE — `it87: disagrees about version of symbol module_layout`
+
+If `dmesg` shows:
+
+```
+it87: disagrees about version of symbol module_layout
+```
+
+and `modprobe it87` fails with `Exec format error`, this means a **pre-built**
+`it87.ko` binary is being loaded that was not compiled for the running TrueNAS
+SCALE kernel.  This almost always means the DKMS build described above was
+**killed before it completed** (see the `Killed` entry in `make.log`).
+
+The fix is to complete a successful DKMS build first using the single-job
+workaround above.  Once the module is correctly compiled against the TrueNAS
+kernel headers (`production+truenas`), the symbol version mismatch disappears.
+
+> [!NOTE]
+> This error is **not** related to the `ignore_resource_conflict=1` option or
+> missing `hwmon-vid`; it is purely a build-vs-kernel mismatch.
+
 ### Why did I do that?
 
 The idea for this project has been brought by this [Reddit post](https://www.reddit.com/r/unRAID/comments/1dzep0s/how_to_configure_fan_control_ugreen_nas/)
@@ -347,7 +418,9 @@ The idea for this project has been brought by this [Reddit post](https://www.red
 That was written by 
  *  Copyright (C) 2001 Chris Gauthron
  *  Copyright (C) 2005-2010 Jean Delvare <jdelvare@suse.de>
-and archived by [a1wong](https://github.com/a1wong/it87)
+and archived by [a1wong](https://github.com/a1wong/it87).
+
+Official kernel documentation: [docs.kernel.org/hwmon/it87.html](https://docs.kernel.org/hwmon/it87.html)
 
 ## Results
 

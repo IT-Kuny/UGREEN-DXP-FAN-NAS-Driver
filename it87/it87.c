@@ -165,11 +165,11 @@ static inline void superio_exit(int ioreg, bool noexit)
 #define IT8613E_DEVID 0x8613
 #define IT8620E_DEVID 0x8620
 #define IT8622E_DEVID 0x8622
+#define IT8622E_OEM_DEVID 0x5571	/* UGREEN iDX6011 OEM variant */
 #define IT8623E_DEVID 0x8623
 #define IT8628E_DEVID 0x8628
 #define IT8689E_DEVID 0x8689
 #define IT87952E_DEVID 0x8695
-#define IT5571E_DEVID 0x5571
 
 /* Logical device 4 (Environmental Monitor) registers */
 #define IT87_ACT_REG	0x30
@@ -194,6 +194,14 @@ static unsigned int force_id_cnt;
 
 /* ACPI resource conflicts are ignored if this parameter is set to 1 */
 static bool ignore_resource_conflict;
+
+/*
+ * Force-activate the EC logical device if the BIOS left it deactivated.
+ * Required on UGREEN iDX6011 where the BIOS marks LDN 4 as inactive.
+ * Use with caution: only set this if sensors-detect identifies an IT87xx
+ * chip but the driver reports "not activated, skipping".
+ */
+static bool force_activate;
 
 /* Update battery voltage after every reading if true */
 static bool update_vbat;
@@ -698,6 +706,7 @@ struct it87_data {
 /* Board specific settings from DMI matching */
 struct it87_dmi_data {
 	u8 skip_pwm;		/* pwm channels to skip for this board  */
+	bool force_activate;	/* force-enable EC logical device if BIOS left it deactivated */
 };
 
 /* Global for results from DMI matching, if needed */
@@ -3138,6 +3147,12 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 	case IT8622E_DEVID:
 		sio_data->type = it8622;
 		break;
+	case IT8622E_OEM_DEVID:
+		if (it5571_dxp6011_pro_board())
+			sio_data->type = it5571;
+		else
+			sio_data->type = it8622;
+		break;
 	case IT8628E_DEVID:
 		sio_data->type = it8628;
 		break;
@@ -3146,11 +3161,6 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 		break;
 	case IT87952E_DEVID:
 		sio_data->type = it87952;
-		break;
-	case IT5571E_DEVID:
-		if (!it5571_dxp6011_pro_board())
-			goto exit;
-		sio_data->type = it5571;
 		break;
 	case 0xffff:	/* No device at all */
 		goto exit;
@@ -3186,9 +3196,21 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 
 	superio_select(sioaddr, PME);
 	if (!(superio_inb(sioaddr, IT87_ACT_REG) & 0x01)) {
-		pr_info("Device (chip %s ioreg 0x%x) not activated, skipping\n",
+		/*
+		 * EC logical device is deactivated.  On some boards (e.g.
+		 * UGREEN iDX6011) the BIOS leaves LDN 4 inactive; allow the
+		 * driver to enable it via DMI match or force_activate param.
+		 */
+		bool dmi_force = dmi_data && dmi_data->force_activate;
+
+		if (!force_activate && !dmi_force) {
+			pr_info("Device (chip %s ioreg 0x%x) not activated, skipping\n",
+				config->model, sioaddr);
+			goto exit;
+		}
+		pr_info("Activating EC logical device for chip %s ioreg 0x%x\n",
 			config->model, sioaddr);
-		goto exit;
+		superio_outb(sioaddr, IT87_ACT_REG, 0x01);
 	}
 
 	*address = superio_inw(sioaddr, IT87_BASE_REG) & ~(IT87_EXTENT - 1);
@@ -4193,6 +4215,9 @@ static int it87_dmi_cb(const struct dmi_system_id *dmi_entry)
 	if (dmi_data && dmi_data->skip_pwm)
 		pr_info("Disabling pwm2 due to hardware constraints\n");
 
+	if (dmi_data && dmi_data->force_activate)
+		pr_info("EC logical device force-activation enabled via DMI match\n");
+
 	return 1;
 }
 
@@ -4208,6 +4233,15 @@ static struct it87_dmi_data nvidia_fn68pt = {
 	.skip_pwm = BIT(1),
 };
 
+/*
+ * UGREEN iDX6011: IT8622E (OEM ID 0x5571) at ioreg 0x4e.
+ * The BIOS leaves the EC logical device (LDN 4) deactivated; we must
+ * write 0x01 to IT87_ACT_REG to bring it up before the driver can use it.
+ */
+static struct it87_dmi_data ugreen_idx6011 = {
+	.force_activate = true,
+};
+
 #define IT87_DMI_MATCH_VND(vendor, name, cb, data) \
 	{ \
 		.callback = cb, \
@@ -4218,8 +4252,19 @@ static struct it87_dmi_data nvidia_fn68pt = {
 		.driver_data = data, \
 	}
 
+#define IT87_DMI_MATCH_SYS(vendor, product, cb, data) \
+	{ \
+		.callback = cb, \
+		.matches = { \
+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, vendor), \
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, product), \
+		}, \
+		.driver_data = data, \
+	}
+
 static const struct dmi_system_id it87_dmi_table[] __initconst = {
 	IT87_DMI_MATCH_VND("nVIDIA", "FN68PT", it87_dmi_cb, &nvidia_fn68pt),
+	IT87_DMI_MATCH_SYS("UGREEN", "iDX6011", it87_dmi_cb, &ugreen_idx6011),
 	{ }
 
 };
@@ -4296,6 +4341,10 @@ MODULE_PARM_DESC(force_id, "Override one or more detected device ID(s)");
 
 module_param(ignore_resource_conflict, bool, 0);
 MODULE_PARM_DESC(ignore_resource_conflict, "Ignore ACPI resource conflict");
+
+module_param(force_activate, bool, 0);
+MODULE_PARM_DESC(force_activate,
+		 "Force-activate EC logical device if BIOS left it deactivated (e.g. UGREEN iDX6011)");
 
 module_param(update_vbat, bool, 0);
 MODULE_PARM_DESC(update_vbat, "Update vbat if set else return powerup value");

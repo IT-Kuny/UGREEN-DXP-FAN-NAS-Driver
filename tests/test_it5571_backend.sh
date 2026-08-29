@@ -34,8 +34,8 @@ check_contains() {
 
 echo "=== ITE5571 DXP6011 Pro backend ==="
 
-check_contains '#define IT5571E_DEVID 0x5571' \
-    'ITE5571 DEVID is defined'
+check_contains '#define IT8622E_OEM_DEVID 0x5571' \
+    '0x5571 OEM device ID is defined'
 check_contains 'DMI_PRODUCT_NAME, "iDX6011 Pro"' \
     'DXP6011 Pro DMI product string is matched'
 check_contains '#define IT55_EC_DATA_PORT[[:space:]]+0x62' \
@@ -54,8 +54,10 @@ check_contains 'static const u8 IT5571_REG_FAN_MSB\[\].*0x34, 0x36, 0x38, 0x3a' 
     'fan tachometer MSB registers are defined'
 check_contains 'static const u8 IT5571_REG_FAN_LSB\[\].*0x35, 0x37, 0x39, 0x3b' \
     'fan tachometer LSB registers are defined'
-check_contains 'case IT5571E_DEVID:' \
-    'probe recognizes the ITE5571 device ID'
+check_contains 'case IT8622E_OEM_DEVID:' \
+    'probe recognizes the 0x5571 OEM device ID'
+check_contains 'if \(it5571_dxp6011_pro_board\(\)\)' \
+    'probe routes iDX6011 Pro to the ITE5571 backend'
 check_contains 'if \(data->type == it5571\)' \
     'driver has a dedicated ITE5571 backend path'
 check_contains 'it5571_group_fan' \
