@@ -1,7 +1,7 @@
 [Unit]
 Description=Load IT87 hardware monitoring driver
 DefaultDependencies=no
-Before=fancontrol.service lm-sensors.service
+Before=ugreen-fan-control.service
 After=systemd-modules-load.service
 
 [Service]

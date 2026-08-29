@@ -1,0 +1,18 @@
+[Unit]
+Description=UGREEN DXP Automatic Fan Control
+Documentation=https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver
+After=ugreen-it87.service
+Requires=ugreen-it87.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/ugreen/ugreen-fan-control.env
+ExecStart=/usr/local/sbin/ugreen-fan-control.sh
+Restart=always
+RestartSec=5
+# Ensure the daemon can write to hwmon sysfs even under strict sandboxing
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -69,8 +69,8 @@ Here is a step by step guide on how to do this:
 ## Install Guide (Automated)
 
 The automated installer handles driver building via DKMS, systemd service setup,
-and configuration protection. It ensures the driver loads reliably after reboots
-and kernel updates, and guards against fancontrol configuration loss.
+and automatic fan control. Fan speed is managed fully automatically — no additional
+configuration is required after running the installer.
 
 1) SSH into your UGREEN NAS
 
@@ -95,43 +95,32 @@ cd UGREEN-Fan-Control
 sudo ./scripts/install.sh
 ```
 
-4) Detect sensors and configure fan control
+That's it. The installer:
+- Builds and installs the `it87` kernel driver via DKMS
+- Enables and starts `ugreen-fan-control.service` — a Bash-native fan control daemon
+  that auto-detects the PWM channel and adjusts fan speed based on CPU and disk temperatures
+- Sets up proper service ordering so the driver is always loaded before the daemon
+
+Fan control is running immediately and will survive reboots and kernel updates.
+
+To verify:
 
 ```bash
-sudo sensors-detect
+systemctl status ugreen-fan-control.service
+journalctl -u ugreen-fan-control.service -f
 ```
 
-You can answer all questions with Y.
-
-> [!NOTE]
-> If you have previously executed lm_sensors and the dkms module has not yet been installed, you may see the following message:
->
-> ```txt
-> Found `ITE IT8613E Super IO Sensors'                        Success!
-> (address 0xa30, driver `to-be-written')
-> ```
->
-> That's normal behavior and will still appear even when the driver has been installed. The interface to the ventilation is now available.
-
-5) Configure which fan uses which channel
+To adjust the fan curves or mode (`silent` / `normal` / `powerful`), edit
+`/etc/ugreen/ugreen-fan-control.env` and restart the service:
 
 ```bash
-sudo pwmconfig
-```
-
-This utility will create the fancontrol config file in `/etc/fancontrol`.
-
-6) Enable and start the fancontrol service
-
-```bash
-sudo systemctl enable --now fancontrol
+sudo systemctl restart ugreen-fan-control.service
 ```
 
 The installer automatically sets up systemd services that ensure:
 - The `hwmon-vid` dependency module is loaded before `it87`
-- The it87 driver is loaded **before** fancontrol starts (prevents race conditions)
-- The fancontrol configuration is backed up and restored if corrupted
-- Device paths are updated automatically if they change after reboot
+- The it87 driver is loaded **before** the fan daemon starts (prevents race conditions)
+- The fan daemon auto-detects the PWM sysfs path at startup
 
 `hwmon-vid` is used as the canonical name in this repo; `hwmon_vid` is an equivalent module alias on some distros/kernels.
 
@@ -172,26 +161,15 @@ sudo make install
 > make clean && make -j4 && sudo make install
 > ```
 
-4) Testing and configure the fans by configuring lm_sensors
+4) Install the fan control daemon and service
 
 ```bash
-sudo sensors-detect
-```
-
-You can answer all questions with Y.
-
-5) Configure fan channels with pwmconfig
-
-```bash
-sudo pwmconfig
-```
-
-This small application will take over for creating the fancontrol config file in /etc
-
-6) Activate the fancontrol service at boot time
-
-```bash
-systemctl enable --now fancontrol
+sudo install -m 755 scripts/ugreen-fan-control.sh /usr/local/sbin/ugreen-fan-control.sh
+sudo mkdir -p /etc/ugreen
+sudo install -m 644 config/ugreen-fan-control.env /etc/ugreen/ugreen-fan-control.env
+sudo cp config/ugreen-fan-control.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ugreen-fan-control.service
 ```
 
 </details>
@@ -204,14 +182,14 @@ To remove the driver, services, and configuration files:
 sudo ./scripts/uninstall.sh
 ```
 
-This preserves your `/etc/fancontrol` configuration. Remove it manually if no longer needed.
+This preserves your `/etc/ugreen/` configuration directory. Remove it manually if no longer needed.
 
 ## Troubleshooting
 
 ### Fan control stops working after reboot
 
 The automated installer prevents this by setting up proper systemd service ordering.
-If you installed manually, ensure the it87 module is loaded before fancontrol starts:
+If you installed manually, ensure the it87 module is loaded before the fan daemon starts:
 
 ```bash
 # Check if the module is loaded
@@ -259,59 +237,27 @@ modinfo -k "$(uname -r)" hwmon-vid || modinfo -k "$(uname -r)" hwmon_vid
 If `modinfo` still fails, install/reinstall your distro's kernel modules package
 for `$(uname -r)` and reboot into that kernel before running the installer again.
 
-### Configuration file is corrupted or missing
+### Fan daemon is not running or applying incorrect PWM
 
-The automated installer includes a config guard that backs up and restores the configuration.
-To manually restore from backup:
-
-```bash
-sudo /usr/local/sbin/fancontrol-config-guard.sh restore
-```
-
-To recreate the configuration from scratch:
+Check the service status and logs:
 
 ```bash
-sudo systemctl stop fancontrol
-sudo pwmconfig
-sudo systemctl start fancontrol
+systemctl status ugreen-fan-control.service
+journalctl -u ugreen-fan-control.service -f
 ```
 
-### DXP4800 — fan visibility works but pwmconfig finds no controllable channels
-
-On the DXP4800 the IT8613E chip starts up with **pwm2 and pwm3 already in
-hardware automatic mode**.
-
-When `pwmconfig` asks:
+The daemon auto-detects the PWM channel at startup. If auto-detection fails, pin the
+path explicitly in `/etc/ugreen/ugreen-fan-control.env`:
 
 ```
-Would you like to generate a detailed correlation table? (y/n)
+FAN_PWM_PATH=/sys/class/hwmon/hwmon3/pwm3
 ```
 
-select **n** (the detailed table is optional and can take longer).
-
-When `pwmconfig` later offers to switch pwm2/pwm3 from automatic to manual
-control, select **y** and let `pwmconfig` take them over. pwm4 and pwm5 are
-not wired to the fans on this model; pwm2/pwm3 are the correct channels.
-
-After `pwmconfig` finishes, verify that the fans respond by watching
-`sensors` output while the service is running:
+Then restart:
 
 ```bash
-sudo systemctl start fancontrol
-watch -n 2 sensors
+sudo systemctl restart ugreen-fan-control.service
 ```
-
-If the fan RPM values change as expected, enable the service permanently:
-
-```bash
-sudo systemctl enable --now fancontrol
-```
-
-> [!NOTE]
-> Unlike the DXP2800 (where fans idle at 0 RPM between `pwmconfig` tests),
-> the DXP4800 fans continue spinning under hardware control during the
-> correlation test.  The correct strategy is to **accept** the offer to
-> switch pwm2/pwm3 to manual mode so that `fancontrol` can manage them.
 
 ### iDX6011 — `it87` reports "not activated, skipping" at ioreg 0x4e
 
@@ -340,7 +286,11 @@ it87: Activating EC logical device for chip IT8622E ioreg 0x4e
 it87: Found IT8622E chip at 0x..., revision N
 ```
 
-Then run `sensors-detect` and `pwmconfig` as normal.
+Then restart the fan daemon so it re-detects the newly available PWM channel:
+
+```bash
+sudo systemctl restart ugreen-fan-control.service
+```
 
 ### DKMS module fails to build after kernel update
 

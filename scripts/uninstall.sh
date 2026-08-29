@@ -26,19 +26,26 @@ check_root() {
 check_root
 
 log "Stopping services..."
-systemctl stop fancontrol 2>/dev/null || true
-systemctl stop fancontrol-config-guard 2>/dev/null || true
-systemctl stop it87-driver 2>/dev/null || true
+systemctl stop ugreen-fan-control.service 2>/dev/null || true
+systemctl stop ugreen-it87.service 2>/dev/null || true
+systemctl stop fancontrol.service 2>/dev/null || true
+systemctl stop fancontrol-config-guard.service 2>/dev/null || true
+systemctl stop it87-driver.service 2>/dev/null || true
 
 log "Disabling services..."
+systemctl disable ugreen-fan-control.service 2>/dev/null || true
+systemctl disable ugreen-it87.service 2>/dev/null || true
+systemctl disable fancontrol.service 2>/dev/null || true
 systemctl disable fancontrol-config-guard.service 2>/dev/null || true
 systemctl disable it87-driver.service 2>/dev/null || true
 
 log "Removing systemd files..."
+rm -f /etc/systemd/system/ugreen-fan-control.service
+rm -f /etc/systemd/system/ugreen-it87.service
+# Clean up legacy service names from earlier installations
 rm -f /etc/systemd/system/it87-driver.service
 rm -f /etc/systemd/system/fancontrol-config-guard.service
 rm -f /etc/systemd/system/fancontrol.service.d/ugreen-ordering.conf
-# Also clean up the old override.conf name from earlier installations
 rm -f /etc/systemd/system/fancontrol.service.d/override.conf
 if [ -d /etc/systemd/system/fancontrol.service.d ] && [ -z "$(ls -A /etc/systemd/system/fancontrol.service.d)" ]; then
     rmdir /etc/systemd/system/fancontrol.service.d
@@ -49,7 +56,9 @@ log "Removing modprobe configuration..."
 rm -f /etc/modprobe.d/it87.conf
 rm -f /etc/modules-load.d/it87.conf
 
-log "Removing config guard script..."
+log "Removing scripts..."
+rm -f /usr/local/sbin/ugreen-fan-control.sh
+# Clean up legacy script name from earlier installations
 rm -f /usr/local/sbin/fancontrol-config-guard.sh
 
 log "Removing DKMS driver..."
@@ -62,5 +71,5 @@ modprobe -r it87 2>/dev/null || true
 
 log ""
 log "Uninstallation complete."
-log "Note: /etc/fancontrol and /etc/fancontrol.d/ were preserved."
-log "Remove them manually if no longer needed."
+log "Note: /etc/ugreen/ was preserved."
+log "Remove it manually if no longer needed."

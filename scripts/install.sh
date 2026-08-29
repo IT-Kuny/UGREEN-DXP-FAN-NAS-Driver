@@ -252,39 +252,28 @@ EOF
 install_services() {
     log "Installing systemd services..."
 
-    # Install the config guard script
-    install -m 755 "$REPO_DIR/scripts/fancontrol-config-guard.sh" /usr/local/sbin/fancontrol-config-guard.sh
+    # Install the Bash fan control daemon
+    install -m 755 "$REPO_DIR/scripts/ugreen-fan-control.sh" /usr/local/sbin/ugreen-fan-control.sh
+
+    # Install the fan control environment file (do not overwrite customised config)
+    mkdir -p /etc/ugreen
+    if [ ! -f /etc/ugreen/ugreen-fan-control.env ]; then
+        install -m 644 "$REPO_DIR/config/ugreen-fan-control.env" /etc/ugreen/ugreen-fan-control.env
+        log "Fan control config installed at /etc/ugreen/ugreen-fan-control.env"
+    else
+        log "Existing fan control config preserved at /etc/ugreen/ugreen-fan-control.env"
+    fi
 
     # Install systemd service files
-    cp "$REPO_DIR/config/it87-driver.service" /etc/systemd/system/
-    cp "$REPO_DIR/config/fancontrol-config-guard.service" /etc/systemd/system/
+    cp "$REPO_DIR/config/ugreen-it87.service" /etc/systemd/system/
+    cp "$REPO_DIR/config/ugreen-fan-control.service" /etc/systemd/system/
 
-    # Create fancontrol drop-in to ensure proper service ordering.
-    # Uses a uniquely named file to avoid overwriting admin drop-ins.
-    mkdir -p /etc/systemd/system/fancontrol.service.d
-    cat > /etc/systemd/system/fancontrol.service.d/ugreen-ordering.conf << 'EOF'
-[Unit]
-After=it87-driver.service fancontrol-config-guard.service
-Requires=it87-driver.service
-Wants=fancontrol-config-guard.service
-EOF
-
-    # Reload systemd and enable services
+    # Reload systemd, enable and start all services
     systemctl daemon-reload
-    systemctl enable it87-driver.service
-    systemctl enable fancontrol-config-guard.service
+    systemctl enable --now ugreen-it87.service
+    systemctl enable --now ugreen-fan-control.service
 
-    log "Systemd services installed and enabled"
-}
-
-create_initial_backup() {
-    if [ -f /etc/fancontrol ]; then
-        log "Creating initial backup of fancontrol configuration..."
-        /usr/local/sbin/fancontrol-config-guard.sh backup || true
-    else
-        log "No existing fancontrol configuration found"
-        log "Run 'sudo pwmconfig' to create one after installation"
-    fi
+    log "Systemd services installed, enabled, and started"
 }
 
 print_status() {
@@ -295,26 +284,21 @@ print_status() {
     echo ""
 
     if lsmod | grep -q it87; then
-        log "Driver status: LOADED"
+        log "Driver status:      LOADED"
     else
-        log "Driver status: NOT LOADED (check 'dmesg' for errors)"
+        log "Driver status:      NOT LOADED (check 'dmesg' for errors)"
     fi
 
-    if [ -f /etc/fancontrol ]; then
-        log "Fan config:    FOUND (/etc/fancontrol)"
+    if systemctl is-active --quiet ugreen-fan-control.service; then
+        log "Fan control:        RUNNING (ugreen-fan-control.service)"
     else
-        log "Fan config:    NOT FOUND - run 'sudo pwmconfig' to create"
+        log "Fan control:        NOT RUNNING (check 'journalctl -u ugreen-fan-control.service')"
     fi
 
     echo ""
-    log "Next steps:"
-    if [ ! -f /etc/fancontrol ]; then
-        log "  1. Run 'sudo sensors-detect' to detect sensors"
-        log "  2. Run 'sudo pwmconfig' to configure fan control"
-        log "  3. Run 'sudo systemctl enable --now fancontrol' to start"
-    else
-        log "  1. Run 'sudo systemctl restart fancontrol' to apply changes"
-    fi
+    log "Fan control is fully automatic — no further configuration required."
+    log "Config: /etc/ugreen/ugreen-fan-control.env"
+    log "Logs:   journalctl -u ugreen-fan-control.service -f"
     echo ""
 }
 
@@ -327,5 +311,4 @@ check_submodule
 install_dkms
 install_modprobe_config
 install_services
-create_initial_backup
 print_status
