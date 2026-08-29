@@ -385,27 +385,13 @@ Tested with
 # Processor: Intel(R) N100 (6/190/0)
 ```
 
+The automated installer ships `ugreen-fan-control.service`, which manages the fan curve on its own — no `fancontrol` setup is needed anymore. Verify it is running:
+
 ```bash
-root@lainpool:/# fancontrol
-Loading configuration from /etc/fancontrol ...
-
-Common settings:
-  INTERVAL=10
-
-Settings for hwmon2/pwm3:
-  Depends on hwmon1/temp3_input
-  Controls hwmon2/fan3_input
-  MINTEMP=22
-  MAXTEMP=60
-  MINSTART=105
-  MINSTOP=26
-  MINPWM=24
-  MAXPWM=255
-  AVERAGE=1
+systemctl status ugreen-fan-control.service
 ```
 
-```bash
-sensors
+Example `sensors` output with the driver loaded:
 it8613-isa-0a30
 Adapter: ISA adapter
 in0:         660.00 mV (min =  +0.00 V, max =  +2.81 V)
