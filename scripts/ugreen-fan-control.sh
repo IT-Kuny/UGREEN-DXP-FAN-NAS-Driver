@@ -98,8 +98,8 @@ parse_curve() {
             local t="${pair%%:*}"
             local p="${pair##*:}"
             # Convert to integer millivalue (handles simple decimals like "35.5")
-            CURVE_TEMPS+=( "$(awk "BEGIN{printf \"%d\", $t * $SCALE}")" )
-            CURVE_PWMS+=(  "$(awk "BEGIN{printf \"%d\", $p * $SCALE}")" )
+            CURVE_TEMPS+=( "$(awk -v value="$t" -v scale="$SCALE" 'BEGIN{printf "%d", value * scale}')" )
+            CURVE_PWMS+=(  "$(awk -v value="$p" -v scale="$SCALE" 'BEGIN{printf "%d", value * scale}')" )
         fi
     done
 }
@@ -424,4 +424,6 @@ compute_target_pwm() {
     echo "$target"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

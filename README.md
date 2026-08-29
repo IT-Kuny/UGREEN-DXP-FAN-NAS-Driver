@@ -116,7 +116,7 @@ sudo systemctl restart ugreen-fan-control.service
 The installer automatically sets up systemd services that ensure:
 - The `hwmon-vid` dependency module is loaded before `it87`
 - The it87 driver is loaded **before** the fan daemon starts (prevents race conditions)
-- Device paths are updated automatically if they change after reboot
+- The fan daemon auto-detects the PWM sysfs path at startup
 
 `hwmon-vid` is used as the canonical name in this repo; `hwmon_vid` is an equivalent module alias on some distros/kernels.
 

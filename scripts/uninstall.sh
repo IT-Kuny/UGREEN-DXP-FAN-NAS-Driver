@@ -26,12 +26,18 @@ check_root() {
 check_root
 
 log "Stopping services..."
-systemctl stop ugreen-fan-control 2>/dev/null || true
-systemctl stop ugreen-it87 2>/dev/null || true
+systemctl stop ugreen-fan-control.service 2>/dev/null || true
+systemctl stop ugreen-it87.service 2>/dev/null || true
+systemctl stop fancontrol.service 2>/dev/null || true
+systemctl stop fancontrol-config-guard.service 2>/dev/null || true
+systemctl stop it87-driver.service 2>/dev/null || true
 
 log "Disabling services..."
 systemctl disable ugreen-fan-control.service 2>/dev/null || true
 systemctl disable ugreen-it87.service 2>/dev/null || true
+systemctl disable fancontrol.service 2>/dev/null || true
+systemctl disable fancontrol-config-guard.service 2>/dev/null || true
+systemctl disable it87-driver.service 2>/dev/null || true
 
 log "Removing systemd files..."
 rm -f /etc/systemd/system/ugreen-fan-control.service

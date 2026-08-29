@@ -124,7 +124,7 @@ fi
 echo ""
 echo "=== Service File CPU Detection ==="
 
-SERVICE_FILE="$SCRIPT_DIR/../config/it87-driver.service"
+SERVICE_FILE="$SCRIPT_DIR/../config/ugreen-it87.service"
 
 log_test "Service ExecStart uses runtime CPU vendor check"
 if grep -q "AuthenticAMD" "$SERVICE_FILE"; then
