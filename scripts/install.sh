@@ -255,9 +255,22 @@ install_services() {
     # Install the config guard script
     install -m 755 "$REPO_DIR/scripts/fancontrol-config-guard.sh" /usr/local/sbin/fancontrol-config-guard.sh
 
+    # Install the Bash fan control daemon
+    install -m 755 "$REPO_DIR/scripts/ugreen-fan-control.sh" /usr/local/sbin/ugreen-fan-control.sh
+
+    # Install the fan control environment file (do not overwrite customised config)
+    mkdir -p /etc/ugreen
+    if [ ! -f /etc/ugreen/ugreen-fan-control.env ]; then
+        install -m 644 "$REPO_DIR/config/ugreen-fan-control.env" /etc/ugreen/ugreen-fan-control.env
+        log "Fan control config installed at /etc/ugreen/ugreen-fan-control.env"
+    else
+        log "Existing fan control config preserved at /etc/ugreen/ugreen-fan-control.env"
+    fi
+
     # Install systemd service files
     cp "$REPO_DIR/config/it87-driver.service" /etc/systemd/system/
     cp "$REPO_DIR/config/fancontrol-config-guard.service" /etc/systemd/system/
+    cp "$REPO_DIR/config/ugreen-fan-control.service" /etc/systemd/system/
 
     # Create fancontrol drop-in to ensure proper service ordering.
     # Uses a uniquely named file to avoid overwriting admin drop-ins.
@@ -273,6 +286,7 @@ EOF
     systemctl daemon-reload
     systemctl enable it87-driver.service
     systemctl enable fancontrol-config-guard.service
+    systemctl enable ugreen-fan-control.service
 
     log "Systemd services installed and enabled"
 }
