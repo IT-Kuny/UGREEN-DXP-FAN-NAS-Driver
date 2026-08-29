@@ -3,6 +3,8 @@
 # Runs inside alpine:3.21. Env: PKGVER
 set -eu
 : "${PKGVER:?}"
+# Alpine package versions: [0-9.] plus _-separated suffixes; sanitize rc/beta suffixes
+ALPVER=$(echo "$PKGVER" | sed -E 's/-/./g; s/([0-9])(rc|beta|alpha|pre|p)([0-9]+)/\1_\2\3/g; s/[^0-9a-zA-Z._]//g')
 
 apk add --quiet bash >/dev/null 2>&1 || true
 # enable community repo (akms lives there)
@@ -24,7 +26,7 @@ mkdir -p /tmp/aports/ugreen-it87-dkms
 cat > /tmp/aports/ugreen-it87-dkms/APKBUILD <<EOF
 # Maintainer: IT-Kuny <it-kuny@users.noreply.github.com>
 pkgname=ugreen-it87-dkms
-pkgver=$PKGVER
+pkgver=$ALPVER
 pkgrel=0
 pkgdesc="UGREEN DXP NAS system fan kernel driver (it87) — DKMS source"
 url="https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver"
