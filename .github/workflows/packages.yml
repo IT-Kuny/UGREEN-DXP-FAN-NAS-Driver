@@ -56,11 +56,14 @@ jobs:
 
       - name: Build package (${{ matrix.distro }})
         run: |
-          mkdir -p /out
+          if command -v apk >/dev/null 2>&1; then apk add --quiet bash >/dev/null; fi
           if [ "${{ matrix.distro }}" = "generic" ]; then
+            export OUT_DIR="$RUNNER_TEMP/out"
+            mkdir -p "$OUT_DIR"
             bash "$SRC_DIR/packaging/build-gentoo.sh"
             bash "$SRC_DIR/packaging/build-unraid.sh"
           else
+            mkdir -p /out
             bash "$SRC_DIR/packaging/build-${{ matrix.distro }}.sh"
           fi
 
@@ -68,7 +71,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: packages-${{ matrix.distro }}
-          path: /out/*
+          path: ${{ matrix.distro == 'generic' && format('{0}/out/*', runner.temp) || '/out/*' }}
           if-no-files-found: error
 
   release:
