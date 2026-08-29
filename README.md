@@ -90,8 +90,8 @@ sudo pacman -S gcc make dkms linux-headers lm_sensors git
 3) Clone the repository and run the installer
 
 ```bash
-git clone --recurse-submodules https://github.com/0n1cOn3/UGREEN-Fan-Control.git
-cd UGREEN-Fan-Control
+git clone --recurse-submodules https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver.git
+cd UGREEN-DXP-FAN-NAS-Driver
 sudo ./scripts/install.sh
 ```
 
@@ -323,8 +323,8 @@ multiple parallel compile jobs.
 
 ```bash
 # Clone and enter the repo (with submodule)
-git clone --recurse-submodules https://github.com/0n1cOn3/UGREEN-Fan-Control.git
-cd UGREEN-Fan-Control/it87
+git clone --recurse-submodules https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver.git
+cd UGREEN-DXP-FAN-NAS-Driver/it87
 
 # Copy BTF vmlinux if it is missing from the build tree
 KBUILD=$(readlink -f /lib/modules/$(uname -r)/build)
