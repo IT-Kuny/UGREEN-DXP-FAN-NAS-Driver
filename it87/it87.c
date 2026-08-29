@@ -1597,7 +1597,7 @@ static ssize_t show_pwm_enable(struct device *dev,
 		return PTR_ERR(data);
 
 	if (data->type == it5571)
-		return sysfs_emit(buf, "%d\n", data->pwm_ctrl[nr] ? 1 : 2);
+		return sysfs_emit(buf, "%d\n", data->pwm_ctrl[nr] == 1 ? 1 : 2);
 
 	return sysfs_emit(buf, "%d\n", pwm_mode(data, nr));
 }
@@ -1911,8 +1911,6 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
 		}
 
 		err = it55_ec_read(IT5571_REG_FAN_MODE[nr], &data->pwm_ctrl[nr]);
-		if (!err)
-			data->valid = false;
 		if (!err && !data->pwm_ctrl[nr])
 			err = -EOPNOTSUPP;
 		if (!err)
@@ -3165,6 +3163,7 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 
 	if (sio_data->type == it5571) {
 		err = 0;
+		/* Synthetic address used as the platform device id for this EC path. */
 		*address = IT55_EC_DATA_PORT;
 		sio_data->sioaddr = sioaddr;
 		sio_data->revision = superio_inb(sioaddr, DEVREV) & 0x0f;
@@ -3873,6 +3872,11 @@ static int it87_probe(struct platform_device *pdev)
 			return -EBUSY;
 		}
 	}
+	/*
+	 * The ITE5571 backend shares the EC with platform firmware, so it uses
+	 * transient request_muxed_region() claims around each transaction
+	 * instead of holding the ports for the driver's full lifetime.
+	 */
 
 	data = devm_kzalloc(&pdev->dev, sizeof(struct it87_data), GFP_KERNEL);
 	if (!data)
