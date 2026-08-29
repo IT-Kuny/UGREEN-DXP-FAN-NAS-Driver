@@ -837,6 +837,42 @@ static long it5571_pwm_from_reg(u8 reg)
 	return DIV_ROUND_CLOSEST(reg * 255, IT55_EC_PWM_MAX);
 }
 
+static int it5571_update_device_locked(struct it87_data *data)
+{
+	int i, err;
+
+	data->valid = false;
+
+	err = it55_ec_request_regions();
+	if (err)
+		return err;
+
+	for (i = 0; i < ARRAY_SIZE(IT5571_REG_FAN_MODE); i++) {
+		u8 msb, lsb;
+
+		err = it55_ec_read(IT5571_REG_FAN_MODE[i], &data->pwm_ctrl[i]);
+		if (err)
+			goto out;
+		err = it55_ec_read(IT5571_REG_PWM_DUTY[i], &data->pwm_duty[i]);
+		if (err)
+			goto out;
+		err = it55_ec_read(IT5571_REG_FAN_MSB[i], &msb);
+		if (err)
+			goto out;
+		err = it55_ec_read(IT5571_REG_FAN_LSB[i], &lsb);
+		if (err)
+			goto out;
+
+		data->fan[i][0] = (msb << 8) | lsb;
+	}
+
+	data->last_updated = jiffies;
+	data->valid = true;
+out:
+	it55_ec_release_regions();
+	return err;
+}
+
 static int adc_lsb(const struct it87_data *data, int nr)
 {
 	int lsb;
@@ -1074,42 +1110,11 @@ static struct it87_data *it87_update_device(struct device *dev)
 	if (time_after(jiffies, data->last_updated + HZ + HZ / 2) ||
 		       !data->valid) {
 		if (data->type == it5571) {
-			data->valid = false;
-			err = it55_ec_request_regions();
+			err = it5571_update_device_locked(data);
 			if (err) {
 				ret = ERR_PTR(err);
 				goto unlock;
 			}
-
-			for (i = 0; i < ARRAY_SIZE(IT5571_REG_FAN_MODE); i++) {
-				u8 msb, lsb;
-
-				err = it55_ec_read(IT5571_REG_FAN_MODE[i],
-						   &data->pwm_ctrl[i]);
-				if (err)
-					goto it5571_release;
-				err = it55_ec_read(IT5571_REG_PWM_DUTY[i],
-						   &data->pwm_duty[i]);
-				if (err)
-					goto it5571_release;
-				err = it55_ec_read(IT5571_REG_FAN_MSB[i], &msb);
-				if (err)
-					goto it5571_release;
-				err = it55_ec_read(IT5571_REG_FAN_LSB[i], &lsb);
-				if (err)
-					goto it5571_release;
-
-				data->fan[i][0] = (msb << 8) | lsb;
-			}
-
-it5571_release:
-			it55_ec_release_regions();
-			if (err) {
-				ret = ERR_PTR(err);
-				goto unlock;
-			}
-			data->last_updated = jiffies;
-			data->valid = true;
 			goto unlock;
 		}
 
@@ -1777,8 +1782,9 @@ static ssize_t set_pwm_enable(struct device *dev, struct device_attribute *attr,
 	if (data->type == it5571) {
 		u8 mode;
 
+		/* The vendor EC only exposes manual and automatic fan modes. */
 		if (val == 0)
-			return -EINVAL;
+			return -EOPNOTSUPP;
 
 		mode = (val == 1) ? 1 : 0;
 
@@ -1905,7 +1911,7 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
 
 		err = it55_ec_read(IT5571_REG_FAN_MODE[nr], &data->pwm_ctrl[nr]);
 		if (!err && !data->pwm_ctrl[nr])
-			err = -EBUSY;
+			err = -EOPNOTSUPP;
 		if (!err)
 			err = it55_ec_write(IT5571_REG_PWM_DUTY[nr], pwm);
 		if (!err) {
@@ -3911,8 +3917,8 @@ static int it87_probe(struct platform_device *pdev)
 	mutex_init(&data->update_lock);
 
 	if (data->type == it5571) {
-		data->has_fan = BIT(ARRAY_SIZE(IT5571_REG_FAN_MODE)) - 1;
-		data->has_pwm = BIT(ARRAY_SIZE(IT5571_REG_FAN_MODE)) - 1;
+		data->has_fan = GENMASK(ARRAY_SIZE(IT5571_REG_FAN_MODE) - 1, 0);
+		data->has_pwm = GENMASK(ARRAY_SIZE(IT5571_REG_FAN_MODE) - 1, 0);
 		data->groups[0] = &it5571_group_fan;
 		data->groups[1] = &it5571_group_pwm;
 
@@ -4061,15 +4067,13 @@ static int it87_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct it87_data *data = dev_get_drvdata(dev);
-	struct it87_data *updated;
 	int err;
 
 	if (data->type == it5571) {
 		mutex_lock(&data->update_lock);
-		data->valid = false;
+		err = it5571_update_device_locked(data);
 		mutex_unlock(&data->update_lock);
-		updated = it87_update_device(dev);
-		return IS_ERR(updated) ? PTR_ERR(updated) : 0;
+		return err;
 	}
 
 	it87_resume_sio(pdev);
@@ -4110,28 +4114,44 @@ static int __init it87_device_add(int index, unsigned short address,
 				  const struct it87_sio_data *sio_data)
 {
 	struct platform_device *pdev;
-	struct resource res = {
-		.start	= sio_data->type == it5571 ?
-			  IT55_EC_CMD_PORT : address + IT87_EC_OFFSET,
-		.end	= sio_data->type == it5571 ?
-			  IT55_EC_CMD_PORT :
-			  address + IT87_EC_OFFSET + IT87_EC_EXTENT - 1,
-		.name	= DRVNAME,
-		.flags	= IORESOURCE_IO,
+	struct resource res[] = {
+		{
+			.name	= DRVNAME,
+			.flags	= IORESOURCE_IO,
+		},
+		{
+			.name	= DRVNAME,
+			.flags	= IORESOURCE_IO,
+		},
 	};
+	int nres = 1;
+	int i;
 	int err;
 
-	err = acpi_check_resource_conflict(&res);
-	if (err) {
-		if (!ignore_resource_conflict)
-			return err;
+	if (sio_data->type == it5571) {
+		res[0].start = IT55_EC_DATA_PORT;
+		res[0].end = IT55_EC_DATA_PORT;
+		res[1].start = IT55_EC_CMD_PORT;
+		res[1].end = IT55_EC_CMD_PORT;
+		nres = 2;
+	} else {
+		res[0].start = address + IT87_EC_OFFSET;
+		res[0].end = address + IT87_EC_OFFSET + IT87_EC_EXTENT - 1;
+	}
+
+	for (i = 0; i < nres; i++) {
+		err = acpi_check_resource_conflict(&res[i]);
+		if (err) {
+			if (!ignore_resource_conflict)
+				return err;
+		}
 	}
 
 	pdev = platform_device_alloc(DRVNAME, address);
 	if (!pdev)
 		return -ENOMEM;
 
-	err = platform_device_add_resources(pdev, &res, 1);
+	err = platform_device_add_resources(pdev, res, nres);
 	if (err) {
 		pr_err("Device resource addition failed (%d)\n", err);
 		goto exit_device_put;

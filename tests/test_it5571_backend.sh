@@ -42,6 +42,10 @@ check_contains '#define IT55_EC_DATA_PORT[[:space:]]+0x62' \
     'EC data port is defined'
 check_contains '#define IT55_EC_CMD_PORT[[:space:]]+0x66' \
     'EC command port is defined'
+check_contains 'request_muxed_region\(IT55_EC_DATA_PORT, 1, DRVNAME\)' \
+    'EC data port is claimed individually'
+check_contains 'request_muxed_region\(IT55_EC_CMD_PORT, 1, DRVNAME\)' \
+    'EC command port is claimed individually'
 check_contains 'static const u8 IT5571_REG_FAN_MODE\[\].*0xb0, 0xb2, 0xb4, 0xb6' \
     'manual/auto mode registers are defined'
 check_contains 'static const u8 IT5571_REG_PWM_DUTY\[\].*0xb1, 0xb3, 0xb5, 0xb7' \
@@ -58,6 +62,8 @@ check_contains 'it5571_group_fan' \
     'driver exposes a dedicated fan attribute group'
 check_contains 'it5571_group_pwm' \
     'driver exposes a dedicated pwm attribute group'
+check_contains 'return -EOPNOTSUPP;' \
+    'unsupported EC fan modes return EOPNOTSUPP'
 
 echo ""
 echo "=============================="
