@@ -5,7 +5,7 @@ This applies to those who do not use UGOS PRO but __unRAID, Debian, Ubuntu, Fedo
 
 > [!NOTE]
 > In cooperation with AI, we've upstreamed the driver for the it87 chipset for the latest linux kernel (April 2026), dropped old kernel support for kernel version 2.7.x since there will be no UGREEN NAS with such a low linux kernel available. I'm not good with C so any help, bug fixings and reviews are highly welcome :-)
-> 
+>
 > Official kernel documentation for the it87 driver: [docs.kernel.org/hwmon/it87.html](https://docs.kernel.org/hwmon/it87.html)
 
 ---
@@ -23,6 +23,10 @@ What's currently being partially supported:
 
 - DXP6800Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/6) #6 for now)
 - DXP4800 (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/11) #11 for now — fan visibility works, active PWM control requires additional setup)
+
+What's currently under investigation / testing:
+
+- DXP6011 Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/23) #23 for now — reported on unRAID with an unknown Super I/O ID `0x5571` at `0x4e`; plain `modprobe it87 ignore_resource_conflict=1` still fails with `No such device`, so support is pending register-dump analysis and `force_id` testing. UGREEN's published `kernel-6.12` GPL tree also contains a vendor `drivers/ugreen/` area that references `ug_idx6011pro-sio.o` and `leds-mcu.o`, and `ug_it55pro_functions.c` identifies the vendor product string as `iDX6011 Pro` and the chip as `ITE5571`, with OEM fan-control code paths that are useful reverse-engineering material even though the source drop appears incomplete.)
 
 What's **not yet supported** (under investigation):
 

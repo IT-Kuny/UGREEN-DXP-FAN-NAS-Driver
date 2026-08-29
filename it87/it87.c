@@ -61,12 +61,14 @@
 #include <linux/dmi.h>
 #include <linux/acpi.h>
 #include <linux/io.h>
+#include <linux/delay.h>
 
 #define DRVNAME "it87"
 
 enum chips { it87, it8712, it8716, it8718, it8720, it8721, it8728, it8732,
 	     it8771, it8772, it8781, it8782, it8783, it8786, it8790,
-	     it8792, it8603, it8613, it8620, it8622, it8628, it8689, it87952 };
+	     it8792, it8603, it8613, it8620, it8622, it8628, it8689,
+	     it87952, it5571 };
 
 static struct platform_device *it87_pdev[2];
 
@@ -221,6 +223,25 @@ static bool fix_pwm_polarity;
 /* Where are the ISA address/data registers relative to the EC base address */
 #define IT87_ADDR_REG_OFFSET 0
 #define IT87_DATA_REG_OFFSET 1
+
+/*
+ * UGREEN iDX6011 Pro uses an EC-backed ITE5571 interface instead of the
+ * standard it87 hwmon register window.
+ */
+#define IT55_EC_DATA_PORT	0x62
+#define IT55_EC_CMD_PORT	0x66
+
+#define IT55_EC_STATUS_IBF	BIT(1)
+#define IT55_EC_STATUS_OBF	BIT(0)
+#define IT55_EC_CMD_READ_MEM	0x80
+#define IT55_EC_CMD_WRITE_MEM	0x81
+#define IT55_EC_TIMEOUT_MS	5
+#define IT55_EC_PWM_MAX		0xc6
+
+static const u8 IT5571_REG_FAN_MODE[] = { 0xb0, 0xb2, 0xb4, 0xb6 };
+static const u8 IT5571_REG_PWM_DUTY[] = { 0xb1, 0xb3, 0xb5, 0xb7 };
+static const u8 IT5571_REG_FAN_MSB[] = { 0x34, 0x36, 0x38, 0x3a };
+static const u8 IT5571_REG_FAN_LSB[] = { 0x35, 0x37, 0x39, 0x3b };
 
 /*----- The IT87 registers -----*/
 
@@ -555,6 +576,10 @@ static const struct it87_devices it87_devices[] = {
 		.peci_mask = 0x07,
 		.old_peci_mask = 0x02,	/* Actually reports PCH */
 	},
+	[it5571] = {
+		.name = "it5571",
+		.model = "ITE5571",
+	},
 };
 
 #define has_16bit_fans(data)	((data)->features & FEAT_16BIT_FANS)
@@ -685,7 +710,178 @@ struct it87_dmi_data {
 };
 
 /* Global for results from DMI matching, if needed */
-static struct it87_dmi_data *dmi_data;
+static const struct it87_dmi_data *dmi_data;
+
+static bool it5571_dxp6011_pro_board(void)
+{
+	return dmi_match(DMI_PRODUCT_NAME, "iDX6011 Pro");
+}
+
+static int it55_ec_request_regions(void)
+{
+	if (!request_muxed_region(IT55_EC_DATA_PORT, 1, DRVNAME))
+		return -EBUSY;
+	if (!request_muxed_region(IT55_EC_CMD_PORT, 1, DRVNAME)) {
+		release_region(IT55_EC_DATA_PORT, 1);
+		return -EBUSY;
+	}
+	return 0;
+}
+
+static void it55_ec_release_regions(void)
+{
+	release_region(IT55_EC_CMD_PORT, 1);
+	release_region(IT55_EC_DATA_PORT, 1);
+}
+
+static u8 it55_ec_read_status(void)
+{
+	return inb(IT55_EC_CMD_PORT);
+}
+
+static int it55_ec_wait_command_ready(void)
+{
+	int timeout = IT55_EC_TIMEOUT_MS;
+	u8 status = 0;
+
+	while (timeout-- > 0) {
+		status = it55_ec_read_status();
+		if (!(status & IT55_EC_STATUS_IBF))
+			return 0;
+		msleep(1);
+	}
+
+	return -ETIMEDOUT;
+}
+
+static int it55_ec_wait_data_ready(void)
+{
+	int timeout = IT55_EC_TIMEOUT_MS;
+	u8 status = 0;
+
+	while (timeout-- > 0) {
+		status = it55_ec_read_status();
+		if (status & IT55_EC_STATUS_OBF)
+			return 0;
+		msleep(1);
+	}
+
+	return -ETIMEDOUT;
+}
+
+static int it55_ec_send_command(u8 command)
+{
+	int err;
+
+	err = it55_ec_wait_command_ready();
+	if (err)
+		return err;
+
+	outb(command, IT55_EC_CMD_PORT);
+	return 0;
+}
+
+static int it55_ec_send_data(u8 value)
+{
+	int err;
+
+	err = it55_ec_wait_command_ready();
+	if (err)
+		return err;
+
+	outb(value, IT55_EC_DATA_PORT);
+	return 0;
+}
+
+static int it55_ec_receive_data(u8 *value)
+{
+	int err;
+
+	err = it55_ec_wait_data_ready();
+	if (err)
+		return err;
+
+	*value = inb(IT55_EC_DATA_PORT);
+	return 0;
+}
+
+static int it55_ec_read(u8 reg, u8 *value)
+{
+	int err;
+
+	err = it55_ec_send_command(IT55_EC_CMD_READ_MEM);
+	if (err)
+		return err;
+
+	err = it55_ec_send_data(reg);
+	if (err)
+		return err;
+
+	return it55_ec_receive_data(value);
+}
+
+static int it55_ec_write(u8 reg, u8 value)
+{
+	int err;
+
+	err = it55_ec_send_command(IT55_EC_CMD_WRITE_MEM);
+	if (err)
+		return err;
+
+	err = it55_ec_send_data(reg);
+	if (err)
+		return err;
+
+	return it55_ec_send_data(value);
+}
+
+static u8 it5571_pwm_to_reg(long val)
+{
+	val = clamp_val(val, 0, 255);
+	return DIV_ROUND_CLOSEST(val * IT55_EC_PWM_MAX, 255);
+}
+
+static long it5571_pwm_from_reg(u8 reg)
+{
+	return DIV_ROUND_CLOSEST(reg * 255, IT55_EC_PWM_MAX);
+}
+
+static int it5571_update_device_locked(struct it87_data *data)
+{
+	int i, err;
+
+	lockdep_assert_held(&data->update_lock);
+	data->valid = false;
+
+	err = it55_ec_request_regions();
+	if (err)
+		return err;
+
+	for (i = 0; i < ARRAY_SIZE(IT5571_REG_FAN_MODE); i++) {
+		u8 msb, lsb;
+
+		err = it55_ec_read(IT5571_REG_FAN_MODE[i], &data->pwm_ctrl[i]);
+		if (err)
+			goto out;
+		err = it55_ec_read(IT5571_REG_PWM_DUTY[i], &data->pwm_duty[i]);
+		if (err)
+			goto out;
+		err = it55_ec_read(IT5571_REG_FAN_MSB[i], &msb);
+		if (err)
+			goto out;
+		err = it55_ec_read(IT5571_REG_FAN_LSB[i], &lsb);
+		if (err)
+			goto out;
+
+		data->fan[i][0] = (msb << 8) | lsb;
+	}
+
+	data->last_updated = jiffies;
+	data->valid = true;
+out:
+	it55_ec_release_regions();
+	return err;
+}
 
 static int adc_lsb(const struct it87_data *data, int nr)
 {
@@ -923,6 +1119,15 @@ static struct it87_data *it87_update_device(struct device *dev)
 
 	if (time_after(jiffies, data->last_updated + HZ + HZ / 2) ||
 		       !data->valid) {
+		if (data->type == it5571) {
+			err = it5571_update_device_locked(data);
+			if (err) {
+				ret = ERR_PTR(err);
+				goto unlock;
+			}
+			goto unlock;
+		}
+
 		err = smbus_disable(data);
 		if (err) {
 			ret = ERR_PTR(err);
@@ -1367,6 +1572,9 @@ static ssize_t show_fan(struct device *dev, struct device_attribute *attr,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
+	if (data->type == it5571)
+		return sysfs_emit(buf, "%u\n", data->fan[nr][index]);
+
 	speed = has_16bit_fans(data) ?
 		FAN16_FROM_REG(data->fan[nr][index]) :
 		FAN_FROM_REG(data->fan[nr][index],
@@ -1397,6 +1605,9 @@ static ssize_t show_pwm_enable(struct device *dev,
 	if (IS_ERR(data))
 		return PTR_ERR(data);
 
+	if (data->type == it5571)
+		return sysfs_emit(buf, "%d\n", data->pwm_ctrl[nr] == 1 ? 1 : 2);
+
 	return sysfs_emit(buf, "%d\n", pwm_mode(data, nr));
 }
 
@@ -1409,6 +1620,10 @@ static ssize_t show_pwm(struct device *dev, struct device_attribute *attr,
 
 	if (IS_ERR(data))
 		return PTR_ERR(data);
+
+	if (data->type == it5571)
+		return sysfs_emit(buf, "%ld\n",
+				  it5571_pwm_from_reg(data->pwm_duty[nr]));
 
 	return sysfs_emit(buf, "%d\n",
 		       pwm_from_reg(data, data->pwm_duty[nr]));
@@ -1574,6 +1789,33 @@ static ssize_t set_pwm_enable(struct device *dev, struct device_attribute *attr,
 	if (kstrtol(buf, 10, &val) < 0 || val < 0 || val > 2)
 		return -EINVAL;
 
+	if (data->type == it5571) {
+		u8 mode;
+
+		/* The vendor EC only exposes manual and automatic fan modes. */
+		if (val == 0)
+			return -EOPNOTSUPP;
+
+		mode = (val == 1) ? 1 : 0;
+
+		mutex_lock(&data->update_lock);
+		err = it55_ec_request_regions();
+		if (err) {
+			mutex_unlock(&data->update_lock);
+			return err;
+		}
+
+		err = it55_ec_write(IT5571_REG_FAN_MODE[nr], mode);
+		if (!err) {
+			data->pwm_ctrl[nr] = mode;
+			data->valid = false;
+		}
+
+		it55_ec_release_regions();
+		mutex_unlock(&data->update_lock);
+		return err ? err : count;
+	}
+
 	/* Check trip points before switching to automatic mode */
 	if (val == 2) {
 		if (check_trip_points(dev, nr) < 0)
@@ -1666,6 +1908,31 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
 
 	if (kstrtol(buf, 10, &val) < 0 || val < 0 || val > 255)
 		return -EINVAL;
+
+	if (data->type == it5571) {
+		u8 pwm = it5571_pwm_to_reg(val);
+
+		mutex_lock(&data->update_lock);
+		err = it55_ec_request_regions();
+		if (err) {
+			mutex_unlock(&data->update_lock);
+			return err;
+		}
+
+		err = it55_ec_read(IT5571_REG_FAN_MODE[nr], &data->pwm_ctrl[nr]);
+		if (!err && !data->pwm_ctrl[nr])
+			err = -EOPNOTSUPP;
+		if (!err)
+			err = it55_ec_write(IT5571_REG_PWM_DUTY[nr], pwm);
+		if (!err) {
+			data->pwm_duty[nr] = pwm;
+			data->valid = false;
+		}
+
+		it55_ec_release_regions();
+		mutex_unlock(&data->update_lock);
+		return err ? err : count;
+	}
 
 	err = it87_lock(data);
 	if (err)
@@ -2638,6 +2905,34 @@ static const struct attribute_group it87_group_pwm = {
 	.is_visible = it87_pwm_is_visible,
 };
 
+static struct attribute *it5571_attributes_fan[] = {
+	&sensor_dev_attr_fan1_input.dev_attr.attr,
+	&sensor_dev_attr_fan2_input.dev_attr.attr,
+	&sensor_dev_attr_fan3_input.dev_attr.attr,
+	&sensor_dev_attr_fan4_input.dev_attr.attr,
+	NULL
+};
+
+static const struct attribute_group it5571_group_fan = {
+	.attrs = it5571_attributes_fan,
+};
+
+static struct attribute *it5571_attributes_pwm[] = {
+	&sensor_dev_attr_pwm1_enable.dev_attr.attr,
+	&sensor_dev_attr_pwm1.dev_attr.attr,
+	&sensor_dev_attr_pwm2_enable.dev_attr.attr,
+	&sensor_dev_attr_pwm2.dev_attr.attr,
+	&sensor_dev_attr_pwm3_enable.dev_attr.attr,
+	&sensor_dev_attr_pwm3.dev_attr.attr,
+	&sensor_dev_attr_pwm4_enable.dev_attr.attr,
+	&sensor_dev_attr_pwm4.dev_attr.attr,
+	NULL
+};
+
+static const struct attribute_group it5571_group_pwm = {
+	.attrs = it5571_attributes_pwm,
+};
+
 static umode_t it87_auto_pwm_is_visible(struct kobject *kobj,
 					struct attribute *attr, int index)
 {
@@ -2850,8 +3145,13 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 		sio_data->type = it8620;
 		break;
 	case IT8622E_DEVID:
-	case IT8622E_OEM_DEVID:
 		sio_data->type = it8622;
+		break;
+	case IT8622E_OEM_DEVID:
+		if (it5571_dxp6011_pro_board())
+			sio_data->type = it5571;
+		else
+			sio_data->type = it8622;
 		break;
 	case IT8628E_DEVID:
 		sio_data->type = it8628;
@@ -2870,6 +3170,17 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 	}
 
 	config = &it87_devices[sio_data->type];
+
+	if (sio_data->type == it5571) {
+		err = 0;
+		/* Synthetic address used as the platform device id for this EC path. */
+		*address = IT55_EC_DATA_PORT;
+		sio_data->sioaddr = sioaddr;
+		sio_data->revision = superio_inb(sioaddr, DEVREV) & 0x0f;
+		pr_info("Found %s EC-backed controller on %s\n",
+			config->model, dmi_get_system_info(DMI_PRODUCT_NAME));
+		goto exit;
+	}
 
 	/*
 	 * If previously we didn't enter configuration mode and it isn't a
@@ -3570,15 +3881,24 @@ static int it87_probe(struct platform_device *pdev)
 	int enable_pwm_interface;
 	struct device *hwmon_dev;
 	int err;
+	unsigned long res_size;
 
 	res = platform_get_resource(pdev, IORESOURCE_IO, 0);
-	if (!devm_request_region(&pdev->dev, res->start, IT87_EC_EXTENT,
-				 DRVNAME)) {
-		dev_err(dev, "Failed to request region 0x%lx-0x%lx\n",
-			(unsigned long)res->start,
-			(unsigned long)(res->start + IT87_EC_EXTENT - 1));
-		return -EBUSY;
+	res_size = resource_size(res);
+	if (sio_data->type != it5571) {
+		if (!devm_request_region(&pdev->dev, res->start, res_size,
+					 DRVNAME)) {
+			dev_err(dev, "Failed to request region 0x%lx-0x%lx\n",
+				(unsigned long)res->start,
+				(unsigned long)(res->start + res_size - 1));
+			return -EBUSY;
+		}
 	}
+	/*
+	 * The ITE5571 backend shares the EC with platform firmware, so it uses
+	 * transient request_muxed_region() claims around each transaction
+	 * instead of holding the ports for the driver's full lifetime.
+	 */
 
 	data = devm_kzalloc(&pdev->dev, sizeof(struct it87_data), GFP_KERNEL);
 	if (!data)
@@ -3624,6 +3944,18 @@ static int it87_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, data);
 
 	mutex_init(&data->update_lock);
+
+	if (data->type == it5571) {
+		data->has_fan = GENMASK(ARRAY_SIZE(IT5571_REG_FAN_MODE) - 1, 0);
+		data->has_pwm = GENMASK(ARRAY_SIZE(IT5571_REG_FAN_MODE) - 1, 0);
+		data->groups[0] = &it5571_group_fan;
+		data->groups[1] = &it5571_group_pwm;
+
+		hwmon_dev = devm_hwmon_device_register_with_groups(dev,
+					it87_devices[sio_data->type].name,
+					data, data->groups);
+		return PTR_ERR_OR_ZERO(hwmon_dev);
+	}
 
 	err = smbus_disable(data);
 	if (err)
@@ -3766,6 +4098,13 @@ static int it87_resume(struct device *dev)
 	struct it87_data *data = dev_get_drvdata(dev);
 	int err;
 
+	if (data->type == it5571) {
+		mutex_lock(&data->update_lock);
+		err = it5571_update_device_locked(data);
+		mutex_unlock(&data->update_lock);
+		return err;
+	}
+
 	it87_resume_sio(pdev);
 
 	err = it87_lock(data);
@@ -3804,25 +4143,44 @@ static int __init it87_device_add(int index, unsigned short address,
 				  const struct it87_sio_data *sio_data)
 {
 	struct platform_device *pdev;
-	struct resource res = {
-		.start	= address + IT87_EC_OFFSET,
-		.end	= address + IT87_EC_OFFSET + IT87_EC_EXTENT - 1,
-		.name	= DRVNAME,
-		.flags	= IORESOURCE_IO,
+	struct resource res[] = {
+		{
+			.name	= DRVNAME,
+			.flags	= IORESOURCE_IO,
+		},
+		{
+			.name	= DRVNAME,
+			.flags	= IORESOURCE_IO,
+		},
 	};
+	int nres = 1;
+	int i;
 	int err;
 
-	err = acpi_check_resource_conflict(&res);
-	if (err) {
-		if (!ignore_resource_conflict)
-			return err;
+	if (sio_data->type == it5571) {
+		res[0].start = IT55_EC_DATA_PORT;
+		res[0].end = IT55_EC_DATA_PORT;
+		res[1].start = IT55_EC_CMD_PORT;
+		res[1].end = IT55_EC_CMD_PORT;
+		nres = 2;
+	} else {
+		res[0].start = address + IT87_EC_OFFSET;
+		res[0].end = address + IT87_EC_OFFSET + IT87_EC_EXTENT - 1;
+	}
+
+	for (i = 0; i < nres; i++) {
+		err = acpi_check_resource_conflict(&res[i]);
+		if (err) {
+			if (!ignore_resource_conflict)
+				return err;
+		}
 	}
 
 	pdev = platform_device_alloc(DRVNAME, address);
 	if (!pdev)
 		return -ENOMEM;
 
-	err = platform_device_add_resources(pdev, &res, 1);
+	err = platform_device_add_resources(pdev, res, nres);
 	if (err) {
 		pr_err("Device resource addition failed (%d)\n", err);
 		goto exit_device_put;
@@ -3871,7 +4229,7 @@ static int it87_dmi_cb(const struct dmi_system_id *dmi_entry)
  * I use the board name string as the trigger in case
  * the same board is ever used in other systems.
  */
-static struct it87_dmi_data nvidia_fn68pt = {
+static const struct it87_dmi_data nvidia_fn68pt = {
 	.skip_pwm = BIT(1),
 };
 
@@ -3880,7 +4238,7 @@ static struct it87_dmi_data nvidia_fn68pt = {
  * The BIOS leaves the EC logical device (LDN 4) deactivated; we must
  * write 0x01 to IT87_ACT_REG to bring it up before the driver can use it.
  */
-static struct it87_dmi_data ugreen_idx6011 = {
+static const struct it87_dmi_data ugreen_idx6011 = {
 	.force_activate = true,
 };
 
@@ -3891,7 +4249,7 @@ static struct it87_dmi_data ugreen_idx6011 = {
 			DMI_EXACT_MATCH(DMI_BOARD_VENDOR, vendor), \
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, name), \
 		}, \
-		.driver_data = data, \
+		.driver_data = (void *)(data), \
 	}
 
 #define IT87_DMI_MATCH_SYS(vendor, product, cb, data) \
@@ -3901,7 +4259,7 @@ static struct it87_dmi_data ugreen_idx6011 = {
 			DMI_EXACT_MATCH(DMI_SYS_VENDOR, vendor), \
 			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, product), \
 		}, \
-		.driver_data = data, \
+		.driver_data = (void *)(data), \
 	}
 
 static const struct dmi_system_id it87_dmi_table[] __initconst = {
