@@ -17,7 +17,7 @@ What's currently being supported:
 
 - DXP2800
 - DXP8800
-- iDX6011 (IT8622E at ioreg 0x4e; OEM chip ID 0x5571; auto-detected via DMI, with `force_activate=1` as a fallback — see Troubleshooting section)
+- iDX6011 (IT8622E at ioreg 0x4e; OEM chip ID 0x5571; `force_activate=1` is handled automatically via DMI — only needed as a fallback if auto-detection fails, see Troubleshooting section)
 
 What's currently being partially supported: 
 
