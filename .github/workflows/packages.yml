@@ -1,0 +1,89 @@
+name: Build Distribution Packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (defaults to repo VERSION/ref name)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: deb
+            image: debian:bookworm-slim
+          - distro: rpm
+            image: fedora:latest
+          - distro: arch
+            image: archlinux:base-devel
+          - distro: alpine
+            image: alpine:3.21
+          - distro: generic
+            image: '' # plain runner, tarballs only
+    container: ${{ matrix.image != '' && matrix.image || null }}
+    env:
+      PKGVER: ${{ github.event.inputs.version || github.ref_name }}
+    steps:
+      - name: Normalize version (strip leading v)
+        run: echo "PKGVER=${PKGVER#v}" >> "$GITHUB_ENV"
+
+      - name: Fetch repository source
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends git ca-certificates curl >/dev/null
+          elif command -v dnf >/dev/null 2>&1; then
+            dnf -y install --quiet git ca-certificates curl >/dev/null 2>&1
+          elif command -v pacman >/dev/null 2>&1; then
+            pacman -Sy --noconfirm --quiet git ca-certificates curl >/dev/null 2>&1
+          elif command -v apk >/dev/null 2>&1; then
+            apk add --quiet git ca-certificates curl >/dev/null
+          fi
+          curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/archive/${GITHUB_SHA}.tar.gz" -o /tmp/repo.tar.gz
+          mkdir -p /tmp/repo && tar -xzf /tmp/repo.tar.gz -C /tmp/repo --strip-components=1
+          echo "SRC_DIR=/tmp/repo" >> "$GITHUB_ENV"
+
+      - name: Build package (${{ matrix.distro }})
+        run: |
+          mkdir -p /out
+          if [ "${{ matrix.distro }}" = "generic" ]; then
+            bash "$SRC_DIR/packaging/build-gentoo.sh"
+            bash "$SRC_DIR/packaging/build-unraid.sh"
+          else
+            bash "$SRC_DIR/packaging/build-${{ matrix.distro }}.sh"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.distro }}
+          path: /out/*
+          if-no-files-found: error
+
+  release:
+    name: Attach packages to release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
