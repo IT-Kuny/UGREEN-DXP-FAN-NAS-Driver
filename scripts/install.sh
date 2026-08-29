@@ -282,13 +282,13 @@ Requires=it87-driver.service
 Wants=fancontrol-config-guard.service
 EOF
 
-    # Reload systemd and enable services
+    # Reload systemd, enable and start all services
     systemctl daemon-reload
-    systemctl enable it87-driver.service
-    systemctl enable fancontrol-config-guard.service
-    systemctl enable ugreen-fan-control.service
+    systemctl enable --now it87-driver.service
+    systemctl enable --now fancontrol-config-guard.service
+    systemctl enable --now ugreen-fan-control.service
 
-    log "Systemd services installed and enabled"
+    log "Systemd services installed, enabled, and started"
 }
 
 create_initial_backup() {
@@ -309,26 +309,21 @@ print_status() {
     echo ""
 
     if lsmod | grep -q it87; then
-        log "Driver status: LOADED"
+        log "Driver status:      LOADED"
     else
-        log "Driver status: NOT LOADED (check 'dmesg' for errors)"
+        log "Driver status:      NOT LOADED (check 'dmesg' for errors)"
     fi
 
-    if [ -f /etc/fancontrol ]; then
-        log "Fan config:    FOUND (/etc/fancontrol)"
+    if systemctl is-active --quiet ugreen-fan-control.service; then
+        log "Fan control:        RUNNING (ugreen-fan-control.service)"
     else
-        log "Fan config:    NOT FOUND - run 'sudo pwmconfig' to create"
+        log "Fan control:        NOT RUNNING (check 'journalctl -u ugreen-fan-control.service')"
     fi
 
     echo ""
-    log "Next steps:"
-    if [ ! -f /etc/fancontrol ]; then
-        log "  1. Run 'sudo sensors-detect' to detect sensors"
-        log "  2. Run 'sudo pwmconfig' to configure fan control"
-        log "  3. Run 'sudo systemctl enable --now fancontrol' to start"
-    else
-        log "  1. Run 'sudo systemctl restart fancontrol' to apply changes"
-    fi
+    log "Fan control is fully automatic — no further configuration required."
+    log "Config: /etc/ugreen/ugreen-fan-control.env"
+    log "Logs:   journalctl -u ugreen-fan-control.service -f"
     echo ""
 }
 
@@ -341,5 +336,4 @@ check_submodule
 install_dkms
 install_modprobe_config
 install_services
-create_initial_backup
 print_status
