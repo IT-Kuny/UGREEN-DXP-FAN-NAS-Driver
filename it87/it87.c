@@ -222,8 +222,6 @@ static bool fix_pwm_polarity;
  */
 #define IT55_EC_DATA_PORT	0x62
 #define IT55_EC_CMD_PORT	0x66
-#define IT55_EC_REGION_START	IT55_EC_DATA_PORT
-#define IT55_EC_REGION_EXTENT	5
 
 #define IT55_EC_STATUS_IBF	BIT(1)
 #define IT55_EC_STATUS_OBF	BIT(0)
@@ -712,15 +710,19 @@ static bool it5571_dxp6011_pro_board(void)
 
 static int it55_ec_request_regions(void)
 {
-	if (!request_muxed_region(IT55_EC_REGION_START, IT55_EC_REGION_EXTENT,
-				  DRVNAME))
+	if (!request_muxed_region(IT55_EC_DATA_PORT, 1, DRVNAME))
 		return -EBUSY;
+	if (!request_muxed_region(IT55_EC_CMD_PORT, 1, DRVNAME)) {
+		release_region(IT55_EC_DATA_PORT, 1);
+		return -EBUSY;
+	}
 	return 0;
 }
 
 static void it55_ec_release_regions(void)
 {
-	release_region(IT55_EC_REGION_START, IT55_EC_REGION_EXTENT);
+	release_region(IT55_EC_CMD_PORT, 1);
+	release_region(IT55_EC_DATA_PORT, 1);
 }
 
 static u8 it55_ec_read_status(void)
@@ -1072,6 +1074,7 @@ static struct it87_data *it87_update_device(struct device *dev)
 	if (time_after(jiffies, data->last_updated + HZ + HZ / 2) ||
 		       !data->valid) {
 		if (data->type == it5571) {
+			data->valid = false;
 			err = it55_ec_request_regions();
 			if (err) {
 				ret = ERR_PTR(err);
@@ -1099,14 +1102,14 @@ static struct it87_data *it87_update_device(struct device *dev)
 				data->fan[i][0] = (msb << 8) | lsb;
 			}
 
-			data->last_updated = jiffies;
-			data->valid = true;
 it5571_release:
 			it55_ec_release_regions();
 			if (err) {
 				ret = ERR_PTR(err);
 				goto unlock;
 			}
+			data->last_updated = jiffies;
+			data->valid = true;
 			goto unlock;
 		}
 
@@ -3153,7 +3156,7 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 
 	if (sio_data->type == it5571) {
 		err = 0;
-		*address = IT55_EC_REGION_START;
+		*address = IT55_EC_CMD_PORT;
 		sio_data->sioaddr = sioaddr;
 		sio_data->revision = superio_inb(sioaddr, DEVREV) & 0x0f;
 		pr_info("Found %s EC-backed controller on %s\n",
@@ -4058,14 +4061,15 @@ static int it87_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct it87_data *data = dev_get_drvdata(dev);
+	struct it87_data *updated;
 	int err;
 
 	if (data->type == it5571) {
 		mutex_lock(&data->update_lock);
 		data->valid = false;
 		mutex_unlock(&data->update_lock);
-		it87_update_device(dev);
-		return 0;
+		updated = it87_update_device(dev);
+		return IS_ERR(updated) ? PTR_ERR(updated) : 0;
 	}
 
 	it87_resume_sio(pdev);
@@ -4108,9 +4112,9 @@ static int __init it87_device_add(int index, unsigned short address,
 	struct platform_device *pdev;
 	struct resource res = {
 		.start	= sio_data->type == it5571 ?
-			  IT55_EC_REGION_START : address + IT87_EC_OFFSET,
+			  IT55_EC_CMD_PORT : address + IT87_EC_OFFSET,
 		.end	= sio_data->type == it5571 ?
-			  IT55_EC_REGION_START + IT55_EC_REGION_EXTENT - 1 :
+			  IT55_EC_CMD_PORT :
 			  address + IT87_EC_OFFSET + IT87_EC_EXTENT - 1,
 		.name	= DRVNAME,
 		.flags	= IORESOURCE_IO,
