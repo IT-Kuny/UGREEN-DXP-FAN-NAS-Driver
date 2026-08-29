@@ -54,8 +54,9 @@ cp /home/builduser/.abuild/*.rsa.pub /etc/apk/keys/ 2>/dev/null || true
 
 su builduser -c 'cd /tmp/aports/ugreen-it87-dkms && abuild checksum >/dev/null && abuild -r'
 
-cp /home/builduser/packages/ugreen-it87-dkms/noarch/*.apk ${OUT_DIR:-/out}/ || \
-    cp /home/builduser/packages/*/noarch/*.apk ${OUT_DIR:-/out}/ || true
+apk_file=$(find /home/builduser/packages -name "ugreen-it87-dkms-*.apk" | head -1)
+[ -n "$apk_file" ] || { echo "ERROR: apk not found"; exit 1; }
+cp "$apk_file" ${OUT_DIR:-/out}/
 
 echo "Built apk:"
 ls -la ${OUT_DIR:-/out}/
