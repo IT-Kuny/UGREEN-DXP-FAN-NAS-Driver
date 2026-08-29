@@ -841,6 +841,7 @@ static int it5571_update_device_locked(struct it87_data *data)
 {
 	int i, err;
 
+	lockdep_assert_held(&data->update_lock);
 	data->valid = false;
 
 	err = it55_ec_request_regions();
@@ -1910,6 +1911,8 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
 		}
 
 		err = it55_ec_read(IT5571_REG_FAN_MODE[nr], &data->pwm_ctrl[nr]);
+		if (!err)
+			data->valid = false;
 		if (!err && !data->pwm_ctrl[nr])
 			err = -EOPNOTSUPP;
 		if (!err)
@@ -3162,7 +3165,7 @@ static int __init it87_find(int sioaddr, unsigned short *address,
 
 	if (sio_data->type == it5571) {
 		err = 0;
-		*address = IT55_EC_CMD_PORT;
+		*address = IT55_EC_DATA_PORT;
 		sio_data->sioaddr = sioaddr;
 		sio_data->revision = superio_inb(sioaddr, DEVREV) & 0x0f;
 		pr_info("Found %s EC-backed controller on %s\n",
