@@ -39,7 +39,7 @@ sha512sums="SKIP"
 
 package() {
     mkdir -p "\$pkgdir"/usr/src/it87-\$pkgver
-    cp -r /tmp/payload/it87-\$pkgver/* "\$pkgdir"/usr/src/it87-\$pkgver/
+    cp -r "\$srcdir"/it87-*/. "\$pkgdir"/usr/src/it87-\$pkgver/
 }
 EOF
 
