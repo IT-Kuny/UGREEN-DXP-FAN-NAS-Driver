@@ -48,6 +48,9 @@ chown -R builduser /tmp/aports /tmp/payload "${OUT_DIR:-/out}"
 
 # Local signing key (untrusted, needed for abuild to produce an apk)
 su builduser -c 'abuild-keygen -a -n -i >/dev/null 2>&1 || abuild-keygen -a -n >/dev/null'
+# abuild-keygen -i fails as non-root; install the pubkey ourselves so the
+# repository index step trusts the signature
+cp /home/builduser/.abuild/*.rsa.pub /etc/apk/keys/ 2>/dev/null || true
 
 su builduser -c 'cd /tmp/aports/ugreen-it87-dkms && abuild checksum >/dev/null && abuild -r'
 
