@@ -17,20 +17,20 @@ What's currently being supported:
 
 - DXP2800
 - DXP8800
+- DXP4800 ([Issue #11](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/11) resolved — fan visibility and PWM control implemented; see the `pwmconfig` prompt selections in the Troubleshooting section for DXP4800 specifics)
 - iDX6011 (IT8622E at ioreg 0x4e; OEM chip ID 0x5571; `force_activate=1` is handled automatically via DMI — only needed as a fallback if auto-detection fails, see Troubleshooting section)
 
 What's currently being partially supported: 
 
 - DXP6800Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/6) #6 for now)
-- DXP4800 (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/11) #11 for now — fan visibility works, active PWM control requires additional setup)
 
 What's currently under investigation / testing:
 
-- DXP6011 Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/23) #23 for now — reported on unRAID with an unknown Super I/O ID `0x5571` at `0x4e`; plain `modprobe it87 ignore_resource_conflict=1` still fails with `No such device`, so support is pending register-dump analysis and `force_id` testing. UGREEN's published `kernel-6.12` GPL tree also contains a vendor `drivers/ugreen/` area that references `ug_idx6011pro-sio.o` and `leds-mcu.o`, and `ug_it55pro_functions.c` identifies the vendor product string as `iDX6011 Pro` and the chip as `ITE5571`, with OEM fan-control code paths that are useful reverse-engineering material even though the source drop appears incomplete.)
+- DXP6011 Pro ([Issue #23](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/23) closed, triaged in [PR #24](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/pull/24) — reported on unRAID with an unknown Super I/O ID `0x5571` at `0x4e`; plain `modprobe it87 ignore_resource_conflict=1` still fails with `No such device`, so support is pending register-dump analysis and `force_id` testing. UGREEN's published `kernel-6.12` GPL tree also contains a vendor `drivers/ugreen/` area that references `ug_idx6011pro-sio.o` and `leds-mcu.o`, and `ug_it55pro_functions.c` identifies the vendor product string as `iDX6011 Pro` and the chip as `ITE5571`, with OEM fan-control code paths that are useful reverse-engineering material even though the source drop appears incomplete.)
 
-What's **not yet supported** (under investigation):
+What's **not supported** by this driver (investigation completed — [Issue #18](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18)):
 
-- DXP2800 GT / DXP4800 GT — these **GT** models use an **AMD Ryzen Embedded R2514** CPU (unlike the Intel N100 in the DXP2800) and a **different Super I/O chip** (a **National Semiconductor / Texas Instruments** chip with ID `0x2011` at I/O port `0x2e`).  The `it87` driver does **not** apply to this hardware. See [Issue #18](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18) for diagnostic details and progress.
+- DXP2800 GT / DXP4800 GT — these **GT** models use an **AMD Ryzen Embedded R2514** CPU (unlike the Intel N100 in the DXP2800) and a **different Super I/O chip** (a **National Semiconductor / Texas Instruments** chip with ID `0x2011` at I/O port `0x2e`).  The `it87` driver does **not** apply to this hardware. Diagnostic details and findings are documented in the closed [Issue #18](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18).
 
 > [!NOTE]
 > **AMD-based models (DXP2800 GT / DXP4800 GT):** On these, the LED MCU sits on a
