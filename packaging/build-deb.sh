@@ -42,8 +42,8 @@ cat > "$DEST/DEBIAN/postinst" <<EOF
 #!/bin/bash
 set -e
 if command -v dkms >/dev/null 2>&1; then
-    dkms add -m $MODULE/$PKGVER || true
-    dkms build -m $MODULE/$PKGVER && dkms install --force -m $MODULE/$PKGVER || \
+    dkms add -m $MODULE -v $PKGVER || true
+    dkms build -m $MODULE -v $PKGVER && dkms install --force -m $MODULE -v $PKGVER || \
         echo "[postinst] DKMS build/install deferred — install matching kernel headers and run: dkms autoinstall"
     modprobe $MODULE 2>/dev/null || true
 fi
@@ -52,7 +52,7 @@ EOF
 cat > "$DEST/DEBIAN/prerm" <<EOF
 #!/bin/bash
 set -e
-dkms remove -m $MODULE/$PKGVER --all || true
+dkms remove -m $MODULE -v $PKGVER --all || true
 EOF
 
 chmod 755 "$DEST/DEBIAN/postinst" "$DEST/DEBIAN/prerm"

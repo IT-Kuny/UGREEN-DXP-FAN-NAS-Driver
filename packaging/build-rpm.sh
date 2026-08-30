@@ -49,14 +49,14 @@ cp -r dkms.conf VERSION Makefile it87.c LICENSE %{buildroot}/usr/src/$MODULE-%{v
 
 %post
 if command -v dkms >/dev/null 2>&1; then
-    dkms add -m $MODULE/%{version} || :
-    dkms build -m $MODULE/%{version} && dkms install --force -m $MODULE/%{version} || \
+    dkms add -m $MODULE -v %{version} || :
+    dkms build -m $MODULE -v %{version} && dkms install --force -m $MODULE -v %{version} || \
         echo "[post] DKMS build deferred — install kernel-devel/kernel headers and run: dkms autoinstall"
     modprobe $MODULE 2>/dev/null || :
 fi
 
 %preun
-dkms remove -m $MODULE/%{version} --all || :
+dkms remove -m $MODULE -v %{version} --all || :
 
 %files
 /usr/src/$MODULE-%{version}/

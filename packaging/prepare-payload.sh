@@ -4,11 +4,15 @@
 set -euo pipefail
 
 : "${PKGVER:?PKGVER must be set}"
-SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
+SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 PAYLOAD_DIR="${PAYLOAD_DIR:-/tmp/payload}"
 MODULE=it87
 
-rm -rf "$PAYLOAD_DIR"
+if [[ -z "$PAYLOAD_DIR" || "$PAYLOAD_DIR" == "/" ]]; then
+    echo "Refusing unsafe PAYLOAD_DIR: '$PAYLOAD_DIR'" >&2
+    exit 1
+fi
+rm -rf -- "$PAYLOAD_DIR"
 mkdir -p "$PAYLOAD_DIR/$MODULE-$PKGVER"
 
 # dkms.conf: fill in the version (same substitution `make dkms` does)
