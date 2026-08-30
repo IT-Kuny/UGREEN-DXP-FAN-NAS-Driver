@@ -5,7 +5,7 @@ set -euo pipefail
 
 : "${PKGVER:?PKGVER must be set}"
 SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-PAYLOAD_DIR="${PAYLOAD_DIR:-/tmp/payload}"
+PAYLOAD_DIR="${PAYLOAD_DIR-/tmp/payload}"
 MODULE=it87
 
 if [[ -z "$PAYLOAD_DIR" || "$PAYLOAD_DIR" == "/" ]]; then
