@@ -10,7 +10,7 @@ source "$SCRIPT_DIR/common.sh"
 mkdir -p "$OUT_DIR"
 
 # Generic DKMS source tarball (usable on any distro via `dkms add`):
-tar -C /tmp/payload -czf "$OUT_DIR/it87-$PKGVER-dkms-source.tar.gz" it87-$PKGVER
+tar -C "$PAYLOAD_DIR" -czf "$OUT_DIR/it87-$PKGVER-dkms-source.tar.gz" it87-$PKGVER
 
 # Gentoo overlay
 OVERLAY=/tmp/ugreen-it87-overlay

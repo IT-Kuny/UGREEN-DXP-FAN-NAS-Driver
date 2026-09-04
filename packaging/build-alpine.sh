@@ -6,16 +6,17 @@ set -eu
 # Alpine package versions: [0-9.] plus _-separated suffixes; sanitize rc/beta suffixes
 ALPVER=$(echo "$PKGVER" | sed -E 's/-/./g; s/([0-9])(rc|beta|alpha|pre|p)([0-9]+)/\1_\2\3/g; s/[^0-9a-zA-Z._]//g')
 
-apk add --quiet bash >/dev/null 2>&1 || true
+apk add --quiet bash >/dev/null
 # enable community repo (akms lives there)
-echo "https://dl-cdn.alpinelinux.org/alpine/v3.20/community" >> /etc/apk/repositories
+echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories
 apk update --quiet >/dev/null
-apk add --quiet akms >/dev/null 2>&1 || true
+apk add --quiet akms >/dev/null
 
 apk add --quiet git alpine-sdk sudo >/dev/null
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-. "$SCRIPT_DIR/prepare-payload.sh"
+PAYLOAD_DIR="${PAYLOAD_DIR:-/tmp/payload}"
+bash "$SCRIPT_DIR/prepare-payload.sh"
 
 adduser -D builduser 2>/dev/null || true
 addgroup builduser abuild 2>/dev/null || true

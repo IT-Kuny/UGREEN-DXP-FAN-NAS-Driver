@@ -15,7 +15,7 @@ mkdir -p "${OUT_DIR:-/out}" && chmod 777 /out
 
 cat > /tmp/PKGBUILD <<EOF
 pkgname=ugreen-it87-dkms
-pkgver=${PKGVER}
+pkgver=${ARCHVER}
 pkgrel=1
 pkgdesc="UGREEN DXP NAS system fan kernel driver (it87) — DKMS source"
 arch=('any')
@@ -26,20 +26,20 @@ source=("\$pkgname-\$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 package() {
-    install -dm755 "\$pkgdir/usr/src/it87-\$pkgver"
-    cp -r /tmp/payload/it87-\$pkgver/* "\$pkgdir/usr/src/it87-\$pkgver/"
+    install -dm755 "\$pkgdir/usr/src/it87-${PKGVER}"
+    cp -r /tmp/payload/it87-${PKGVER}/* "\$pkgdir/usr/src/it87-${PKGVER}/"
 }
 EOF
 
 # Tarball name matching source= entry
 tar -C /tmp/payload -czf /tmp/ugreen-it87-dkms-${ARCHVER}.tar.gz it87-${PKGVER}
 
-chown -R builduser /tmp/PKGBUILD /tmp/ugreen-it87-dkms-${PKGVER}.tar.gz /tmp/payload /out
+chown -R builduser /tmp/PKGBUILD /tmp/ugreen-it87-dkms-${ARCHVER}.tar.gz /tmp/payload /out
 
 sudo -u builduser bash -c '
 set -e
 mkdir -p /tmp/work && cd /tmp/work
-cp /tmp/PKGBUILD /tmp/ugreen-it87-dkms-'"${PKGVER}"'.tar.gz .
+cp /tmp/PKGBUILD /tmp/ugreen-it87-dkms-'"${ARCHVER}"'.tar.gz .
 makepkg -f --noconfirm --skippgpcheck --nodeps
 cp ugreen-it87-dkms-*.pkg.tar.zst ${OUT_DIR:-/out}/
 '

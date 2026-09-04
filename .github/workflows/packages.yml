@@ -64,7 +64,11 @@ jobs:
             bash "$SRC_DIR/packaging/build-unraid.sh"
           else
             mkdir -p /out
-            bash "$SRC_DIR/packaging/build-${{ matrix.distro }}.sh"
+            if [ "${{ matrix.distro }}" = "alpine" ]; then
+              sh "$SRC_DIR/packaging/build-${{ matrix.distro }}.sh"
+            else
+              bash "$SRC_DIR/packaging/build-${{ matrix.distro }}.sh"
+            fi
           fi
 
       - name: Upload artifacts
