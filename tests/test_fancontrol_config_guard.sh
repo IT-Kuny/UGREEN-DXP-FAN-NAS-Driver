@@ -153,6 +153,8 @@ else
 fi
 
 log_test "FAN_DEBUG keeps computed PWM stdout machine-readable"
+read_cpu_temp() { echo "50000"; }
+read_disk_temps() { echo "45000"; }
 DEBUG_LOG="$TEST_TMP_DIR/debug.log"
 debug_target=$(FAN_DEBUG=1 compute_target_pwm 2>"$DEBUG_LOG")
 assert_eq "110" "$debug_target" "compute_target_pwm returns only the target with debug enabled"
