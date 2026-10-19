@@ -83,7 +83,6 @@ MAX_PWM=200
 
 read_cpu_temp() { echo "50000"; }
 read_disk_temps() { echo "45000"; }
-log_debug() { :; }
 assert_eq "110" "$(compute_target_pwm)" "compute_target_pwm chooses higher of CPU/DISK curves"
 
 read_cpu_temp() { echo "80000"; }
@@ -137,6 +136,32 @@ fi
 
 TEST_TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEST_TMP_DIR"' EXIT
+
+log_test "PWM auto-detection keeps logs off stdout"
+AUTO_HWMON_DIR="$TEST_TMP_DIR/sys/hwmon"
+mkdir -p "$AUTO_HWMON_DIR/hwmon0"
+echo "it8613" > "$AUTO_HWMON_DIR/hwmon0/name"
+: > "$AUTO_HWMON_DIR/hwmon0/pwm3"
+DETECT_LOG="$TEST_TMP_DIR/detect.log"
+detected_path=$(auto_detect_pwm_path "$AUTO_HWMON_DIR" 2>"$DETECT_LOG")
+assert_eq "$AUTO_HWMON_DIR/hwmon0/pwm3" "$detected_path" \
+    "auto_detect_pwm_path returns only the PWM path"
+if grep -Fq "Auto-detected UGREEN PWM path: $detected_path (driver: it8613)" "$DETECT_LOG"; then
+    pass "auto_detect_pwm_path writes its log to stderr"
+else
+    fail "auto_detect_pwm_path writes its log to stderr"
+fi
+
+log_test "FAN_DEBUG keeps computed PWM stdout machine-readable"
+DEBUG_LOG="$TEST_TMP_DIR/debug.log"
+debug_target=$(FAN_DEBUG=1 compute_target_pwm 2>"$DEBUG_LOG")
+assert_eq "110" "$debug_target" "compute_target_pwm returns only the target with debug enabled"
+if grep -Fq "[DEBUG] CPU temp: 50°C -> PWM 100" "$DEBUG_LOG" &&
+   grep -Fq "[DEBUG] Max disk temp: 45°C -> PWM 110" "$DEBUG_LOG"; then
+    pass "compute_target_pwm writes debug logs to stderr"
+else
+    fail "compute_target_pwm writes debug logs to stderr"
+fi
 
 make_idx6011_hwmon() {
     local hwmon i
