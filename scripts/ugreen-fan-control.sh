@@ -63,7 +63,7 @@ log_warn()  { echo "$(date '+%Y-%m-%d %T') [WARN]  $*"; }
 log_error() { echo "$(date '+%Y-%m-%d %T') [ERROR] $*" >&2; }
 log_debug() {
     if [[ "${FAN_DEBUG:-0}" == "1" ]]; then
-        echo "$(date '+%Y-%m-%d %T') [DEBUG] $*"
+        echo "$(date '+%Y-%m-%d %T') [DEBUG] $*" >&2
     fi
 }
 
@@ -169,15 +169,16 @@ interpolate_curve() {
 # PWM path auto-detection
 # ---------------------------------------------------------------------------
 auto_detect_pwm_path() {
+    local hwmon_root="${1:-/sys/class/hwmon}"
     local hwmon name pwm_path
-    for hwmon in /sys/class/hwmon/hwmon*; do
+    for hwmon in "$hwmon_root"/hwmon*; do
         [[ -f "$hwmon/name" ]] || continue
         name=$(cat "$hwmon/name" 2>/dev/null) || continue
         if [[ "$name" == it8* || "$name" == it87* || "$name" == it86* ]]; then
             for pwm in pwm3 pwm2 pwm1; do
                 pwm_path="$hwmon/$pwm"
                 if [[ -f "$pwm_path" ]]; then
-                    log_info "Auto-detected UGREEN PWM path: $pwm_path (driver: $name)"
+                    log_info "Auto-detected UGREEN PWM path: $pwm_path (driver: $name)" >&2
                     echo "$pwm_path"
                     return 0
                 fi
