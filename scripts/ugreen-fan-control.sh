@@ -54,6 +54,7 @@ IDX6011_DISK_TURBO_CURVE="${IDX6011_DISK_TURBO_CURVE:-0:45,40:45,48:78,54:96,60:
 IDX6011_FAN_FLOOR="${IDX6011_FAN_FLOOR:-25}"
 IDX6011_CPU_CRITICAL="${IDX6011_CPU_CRITICAL:-88}"
 IDX6011_DISK_CRITICAL="${IDX6011_DISK_CRITICAL:-60}"
+UG201X_PROC_DIR="${UG201X_PROC_DIR:-/proc/it86}"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -324,6 +325,127 @@ is_idx6011_pro() {
         [[ "$(cat /sys/class/dmi/id/product_name 2>/dev/null)" == "iDX6011 Pro" ]]
 }
 
+ug201x_proc_available() {
+    [[ -r "$UG201X_PROC_DIR/temp" && -r "$UG201X_PROC_DIR/fan" && -w "$UG201X_PROC_DIR/fan" ]]
+}
+
+read_ug201x_temps() {
+    awk '
+        {
+            key = $0
+            sub(/:.*/, "", key)
+            value = $0
+            sub(/^[^:]*:[[:space:]]*/, "", value)
+            gsub(/[[:space:]]/, "", value)
+            if (value !~ /^[0-9]+([.][0-9]+)?$/)
+                next
+            if (tolower(key) == "cpu_temp")
+                cpu = value
+            else if (tolower(key) == "board_temp")
+                board = value
+        }
+        END {
+            if (cpu == "" || board == "" || cpu + 0 > 120 || board + 0 > 120)
+                exit 1
+            printf "%d %d\n", cpu * 1000, board * 1000
+        }
+    ' "$UG201X_PROC_DIR/temp" 2>/dev/null
+}
+
+ug201x_compute_targets() {
+    local cpu_curve disk_curve cpu_raw board_raw disk_raw max_disk system_temp
+    local cpu_pwm system_pwm
+
+    case "${FAN_MODE,,}" in
+        silent|quiet)
+            cpu_curve="$SILENT_CPU_FAN_CURVE"
+            disk_curve="$SILENT_DISK_FAN_CURVE"
+            ;;
+        powerful|turbo)
+            cpu_curve="$POWERFUL_CPU_FAN_CURVE"
+            disk_curve="$POWERFUL_DISK_FAN_CURVE"
+            ;;
+        max)
+            echo "255 255"
+            return 0
+            ;;
+        normal|auto)
+            cpu_curve="$CPU_FAN_CURVE"
+            disk_curve="$DISK_FAN_CURVE"
+            ;;
+        *)
+            log_warn "Unknown DXP2800 GT FAN_MODE '${FAN_MODE}', falling back to 'normal'" >&2
+            cpu_curve="$CPU_FAN_CURVE"
+            disk_curve="$DISK_FAN_CURVE"
+            ;;
+    esac
+
+    local temperatures
+    temperatures=$(read_ug201x_temps) || return 1
+    read -r cpu_raw board_raw <<< "$temperatures"
+    [[ "$cpu_raw" =~ ^[0-9]+$ && "$board_raw" =~ ^[0-9]+$ ]] || return 1
+
+    parse_curve "$cpu_curve"
+    local -a cpu_temps=("${CURVE_TEMPS[@]}") cpu_pwms=("${CURVE_PWMS[@]}")
+    parse_curve "$disk_curve"
+    local -a disk_temps=("${CURVE_TEMPS[@]}") disk_pwms=("${CURVE_PWMS[@]}")
+
+    cpu_pwm=$(interpolate_curve "$cpu_raw" cpu_temps cpu_pwms)
+    system_temp="$board_raw"
+    disk_raw=$(read_disk_temps)
+    max_disk=$(list_max "$disk_raw")
+    (( max_disk > system_temp )) && system_temp="$max_disk"
+    system_pwm=$(interpolate_curve "$system_temp" disk_temps disk_pwms)
+
+    cpu_pwm=$(clamp "$cpu_pwm" "$MIN_PWM" "$MAX_PWM")
+    system_pwm=$(clamp "$system_pwm" "$MIN_PWM" "$MAX_PWM")
+    log_debug "GT CPU temp: $(( cpu_raw / SCALE ))°C -> PWM $cpu_pwm"
+    log_debug "GT system temp: $(( system_temp / SCALE ))°C -> PWM $system_pwm"
+    echo "$cpu_pwm $system_pwm"
+}
+
+ug201x_write_fan() {
+    case "$1:$2" in
+        cpu:0) printf 'coff\n' > "$UG201X_PROC_DIR/fan" 2>/dev/null ;;
+        set:0) printf 'off\n' > "$UG201X_PROC_DIR/fan" 2>/dev/null ;;
+        *) printf '%s %s\n' "$1" "$2" > "$UG201X_PROC_DIR/fan" 2>/dev/null ;;
+    esac
+}
+
+ug201x_apply_targets() {
+    local failed=0
+    ug201x_write_fan cpu "$1" || failed=1
+    ug201x_write_fan set "$2" || failed=1
+    return "$failed"
+}
+
+ug201x_main() {
+    cleanup_ug201x() {
+        log_info "Received signal, applying DXP2800 GT failsafe PWM (${FAILSAFE_PWM}) and exiting"
+        ug201x_apply_targets "$FAILSAFE_PWM" "$FAILSAFE_PWM" || true
+        exit 0
+    }
+    trap cleanup_ug201x SIGTERM SIGINT
+
+    log_info "DXP2800 GT fan control: $FAN_MODE (using $UG201X_PROC_DIR)"
+    while true; do
+        local cpu_target system_target targets
+        if targets=$(ug201x_compute_targets); then
+            read -r cpu_target system_target <<< "$targets"
+        else
+            log_warn "DXP2800 GT temperature read failure — applying failsafe PWM (${FAILSAFE_PWM})"
+            cpu_target="$FAILSAFE_PWM"
+            system_target="$FAILSAFE_PWM"
+        fi
+
+        if ! ug201x_apply_targets "$cpu_target" "$system_target"; then
+            log_error "Failed to write DXP2800 GT fan targets; applying failsafe PWM (${FAILSAFE_PWM})"
+            ug201x_apply_targets "$FAILSAFE_PWM" "$FAILSAFE_PWM" || true
+        fi
+        sleep "$POLL_INTERVAL"
+    done
+}
+
 idx6011_pwm_paths() {
     local base="$1" i
     for i in 1 2 3 4; do
@@ -465,6 +587,11 @@ main() {
             exit 1
         }
         idx6011_main "$idx_hwmon"
+        return
+    fi
+
+    if ug201x_proc_available; then
+        ug201x_main
         return
     fi
 
