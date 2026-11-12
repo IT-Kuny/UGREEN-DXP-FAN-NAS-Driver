@@ -57,8 +57,8 @@ is_hwmon_vid_builtin() {
 # Warn when the installer is running on an AMD platform whose Super I/O chip is
 # not yet supported by the it87 driver.  Intel-based UGREEN NAS devices (DXP2800,
 # DXP8800, …) use the IT8613E; AMD-based GT models (DXP2800 GT, DXP4800 GT) use
-# a National Semiconductor (Texas Instruments) chip (ID 0x2011) that the driver
-# does not yet support.
+# a National Semiconductor (Texas Instruments) chip (ID 0x2011) that the it87
+# driver does not support; GT fan control uses the separate ug201x_full driver.
 warn_amd_chip_compatibility() {
     local cpu_vendor
     cpu_vendor=$(get_cpu_vendor)
@@ -69,18 +69,20 @@ warn_amd_chip_compatibility() {
         log "  AMD CPU detected: ${model_name}"
         log "  WARNING: AMD-based UGREEN GT models (DXP2800 GT, DXP4800 GT)"
         log "  use a National Semiconductor (Texas Instruments) Super I/O chip"
-        log "  (ID 0x2011) that is NOT yet supported by the it87 driver."
-        log "  Fan control will NOT work until a driver is written for it."
+        log "  (ID 0x2011) that is not supported by the it87 driver."
+        log "  Install/load the separate ug201x_full driver for fan control;"
+        log "  this installer does not install that kernel module."
         log "  See: https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18"
         log "------------------------------------------------------------"
         if [ -t 1 ]; then
-            log "  Installation will continue so the DKMS module is ready for"
-            log "  future use or testing on Intel-based devices in the same"
-            log "  chassis.  Press Ctrl-C within 10 seconds to abort."
+            log "  Installation will continue; the DXP2800 GT backend activates"
+            log "  when the separate driver provides /proc/it86. Press Ctrl-C"
+            log "  within 10 seconds to abort."
             log "------------------------------------------------------------"
             sleep 10
         else
-            log "  Installation will continue so the DKMS module is ready for future use."
+            log "  Installation will continue; fan control needs /proc/it86 from"
+            log "  the separately installed ug201x_full driver."
             log "------------------------------------------------------------"
         fi
     fi

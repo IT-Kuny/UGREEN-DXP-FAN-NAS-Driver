@@ -41,6 +41,9 @@ assert_eq() {
 # shellcheck source=/dev/null
 source "$FAN_SCRIPT"
 
+TEST_TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TEST_TMP_DIR"' EXIT
+
 setup_curves() {
     parse_curve "35:50,50:100,65:180,75:255"
     CPU_CURVE_TEMPS=("${CURVE_TEMPS[@]}")
@@ -98,6 +101,86 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# DXP2800 GT / ug201x proc backend
+# ---------------------------------------------------------------------------
+log_test "DXP2800 GT proc temperatures and independent targets"
+UG201X_PROC_DIR="$TEST_TMP_DIR/it86"
+mkdir -p "$UG201X_PROC_DIR"
+printf 'cpu_temp:41\nboard_temp:38\n' > "$UG201X_PROC_DIR/temp"
+: > "$UG201X_PROC_DIR/fan"
+MIN_PWM=0
+MAX_PWM=255
+CPU_FAN_CURVE="0:0,100:255"
+DISK_FAN_CURVE="0:0,100:255"
+SILENT_CPU_FAN_CURVE="0:10,100:110"
+SILENT_DISK_FAN_CURVE="0:20,100:120"
+read_disk_temps() { echo ""; }
+if ug201x_proc_available; then
+    pass "ug201x backend detects readable proc files and writable fan control"
+else
+    fail "ug201x backend detects readable proc files and writable fan control"
+fi
+assert_eq "41000 38000" "$(read_ug201x_temps)" \
+    "ug201x temperature reader parses CPU and board temperatures"
+FAN_MODE=normal
+assert_eq "104 96" "$(ug201x_compute_targets)" \
+    "normal mode computes independent CPU and system fan targets"
+FAN_MODE=silent
+assert_eq "51 58" "$(ug201x_compute_targets)" \
+    "silent mode uses separate configured curves"
+read_disk_temps() { echo "70000"; }
+FAN_MODE=normal
+assert_eq "104 178" "$(ug201x_compute_targets)" \
+    "system fan follows the hotter disk temperature"
+read_disk_temps() { echo ""; }
+printf 'cpu_temp:41\n' > "$UG201X_PROC_DIR/temp"
+if ug201x_compute_targets >/dev/null 2>&1; then
+    fail "ug201x target calculation rejects a missing board temperature"
+else
+    pass "ug201x target calculation rejects a missing board temperature"
+fi
+
+UG201X_WRITES="$TEST_TMP_DIR/ug201x-writes"
+ug201x_write_fan() {
+    printf '%s %s\n' "$1" "$2" >> "$UG201X_WRITES"
+}
+: > "$UG201X_WRITES"
+if ug201x_apply_targets 128 64; then
+    pass "ug201x writes both independent fan targets"
+else
+    fail "ug201x writes both independent fan targets"
+fi
+assert_eq $'cpu 128\nset 64' "$(cat "$UG201X_WRITES")" \
+    "ug201x maps CPU and system targets to proc command names"
+
+UG201X_LOOP_WRITES="$TEST_TMP_DIR/ug201x-loop-writes"
+run_ug201x_loop() {
+    (
+        local ticks=0
+        FAN_MODE=normal
+        FAILSAFE_PWM=200
+        POLL_INTERVAL=1
+        printf 'cpu_temp:41\nboard_temp:38\n' > "$UG201X_PROC_DIR/temp"
+        ug201x_write_fan() {
+            printf '%s %s\n' "$1" "$2" >> "$UG201X_LOOP_WRITES"
+        }
+        sleep() {
+            ticks=$((ticks + 1))
+            if (( ticks == 1 )); then
+                printf 'cpu_temp:41\n' > "$UG201X_PROC_DIR/temp"
+            else
+                exit 0
+            fi
+        }
+        ug201x_main >/dev/null 2>&1
+    )
+}
+: > "$UG201X_LOOP_WRITES"
+run_ug201x_loop
+assert_eq $'cpu 104\nset 96\ncpu 200\nset 200' "$(cat "$UG201X_LOOP_WRITES")" \
+    "ug201x loop applies failsafe targets after a temperature read failure"
+
+# ---------------------------------------------------------------------------
 # iDX6011 Pro fan-control behavior
 # ---------------------------------------------------------------------------
 log_test "iDX6011 sensor-independent modes and target calculation"
@@ -133,9 +216,6 @@ if idx6011_compute_targets >/dev/null; then
 else
     pass "quiet mode fails when all temperature sensors are unavailable"
 fi
-
-TEST_TMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TEST_TMP_DIR"' EXIT
 
 log_test "PWM auto-detection keeps logs off stdout"
 AUTO_HWMON_DIR="$TEST_TMP_DIR/sys/hwmon"
