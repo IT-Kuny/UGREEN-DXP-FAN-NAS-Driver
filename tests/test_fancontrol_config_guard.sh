@@ -140,6 +140,20 @@ else
     pass "ug201x target calculation rejects a missing board temperature"
 fi
 
+: > "$UG201X_PROC_DIR/fan"
+if ug201x_write_fan cpu 0; then
+    assert_eq "coff" "$(cat "$UG201X_PROC_DIR/fan")" \
+        "ug201x maps a zero CPU target to the fan-off command"
+else
+    fail "ug201x maps a zero CPU target to the fan-off command"
+fi
+if ug201x_write_fan set 0; then
+    assert_eq "off" "$(cat "$UG201X_PROC_DIR/fan")" \
+        "ug201x maps a zero system target to the fan-off command"
+else
+    fail "ug201x maps a zero system target to the fan-off command"
+fi
+
 UG201X_WRITES="$TEST_TMP_DIR/ug201x-writes"
 ug201x_write_fan() {
     printf '%s %s\n' "$1" "$2" >> "$UG201X_WRITES"

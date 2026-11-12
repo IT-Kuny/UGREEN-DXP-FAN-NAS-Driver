@@ -14,6 +14,7 @@ IT87_DIR="$REPO_DIR/it87"
 HWMON_VID_MODULE="hwmon-vid"
 HWMON_VID_MODULE_ALIAS="hwmon_vid"
 HWMON_VID_BUILTIN_PATTERN='(^|/)hwmon[-_]vid(\.ko)?$'
+GT_BACKEND=0
 
 log() {
     echo "[install] $*"
@@ -52,6 +53,10 @@ is_hwmon_vid_builtin() {
     local kernel_version="${1:-$(uname -r)}"
     local builtin_file="/lib/modules/${kernel_version}/modules.builtin"
     [ -f "$builtin_file" ] && grep -Eq "$HWMON_VID_BUILTIN_PATTERN" "$builtin_file"
+}
+
+is_gt_hardware() {
+    [ -d /proc/it86 ]
 }
 
 # Warn when the installer is running on an AMD platform whose Super I/O chip is
@@ -268,11 +273,19 @@ install_services() {
 
     # Install systemd service files
     cp "$REPO_DIR/config/ugreen-it87.service" /etc/systemd/system/
-    cp "$REPO_DIR/config/ugreen-fan-control.service" /etc/systemd/system/
+    if [ "$GT_BACKEND" -eq 1 ]; then
+        sed '/^After=ugreen-it87.service$/d; /^Requires=ugreen-it87.service$/d' \
+            "$REPO_DIR/config/ugreen-fan-control.service" \
+            > /etc/systemd/system/ugreen-fan-control.service
+    else
+        cp "$REPO_DIR/config/ugreen-fan-control.service" /etc/systemd/system/
+    fi
 
-    # Reload systemd, enable and start all services
+    # Reload systemd and start the services needed by this hardware.
     systemctl daemon-reload
-    systemctl enable --now ugreen-it87.service
+    if [ "$GT_BACKEND" -eq 0 ]; then
+        systemctl enable --now ugreen-it87.service
+    fi
     systemctl enable --now ugreen-fan-control.service
 
     log "Systemd services installed, enabled, and started"
@@ -306,11 +319,16 @@ print_status() {
 
 # Main
 check_root
-check_dependencies
-warn_amd_chip_compatibility
-check_hwmon_vid
-check_submodule
-install_dkms
-install_modprobe_config
+if is_gt_hardware; then
+    GT_BACKEND=1
+    log "GT hardware detected via /proc/it86; skipping it87 installation"
+else
+    check_dependencies
+    warn_amd_chip_compatibility
+    check_hwmon_vid
+    check_submodule
+    install_dkms
+    install_modprobe_config
+fi
 install_services
 print_status

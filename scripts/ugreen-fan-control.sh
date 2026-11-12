@@ -405,7 +405,11 @@ ug201x_compute_targets() {
 }
 
 ug201x_write_fan() {
-    printf '%s %s\n' "$1" "$2" > "$UG201X_PROC_DIR/fan" 2>/dev/null
+    case "$1:$2" in
+        cpu:0) printf 'coff\n' > "$UG201X_PROC_DIR/fan" 2>/dev/null ;;
+        set:0) printf 'off\n' > "$UG201X_PROC_DIR/fan" 2>/dev/null ;;
+        *) printf '%s %s\n' "$1" "$2" > "$UG201X_PROC_DIR/fan" 2>/dev/null ;;
+    esac
 }
 
 ug201x_apply_targets() {
