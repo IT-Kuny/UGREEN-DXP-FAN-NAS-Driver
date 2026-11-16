@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 IT87_DIR="$REPO_DIR/it87"
 HWMON_VID_MODULE="hwmon-vid"
@@ -56,7 +56,16 @@ is_hwmon_vid_builtin() {
 }
 
 is_gt_hardware() {
-    [ -d /proc/it86 ]
+    local product_name_file="${1:-/sys/class/dmi/id/product_name}"
+    local proc_dir="${2:-/proc/it86}"
+    local product_name=""
+
+    if [ -r "$product_name_file" ]; then
+        IFS= read -r product_name < "$product_name_file" || true
+        product_name="${product_name^^}"
+    fi
+
+    [[ "$product_name" =~ ^DXP(2800|4800)[[:space:]]+GT$ ]] || [ -d "$proc_dir" ]
 }
 
 # Warn when the installer is running on an AMD platform whose Super I/O chip is
@@ -318,17 +327,19 @@ print_status() {
 }
 
 # Main
-check_root
-if is_gt_hardware; then
-    GT_BACKEND=1
-    log "GT hardware detected via /proc/it86; skipping it87 installation"
-else
-    check_dependencies
-    warn_amd_chip_compatibility
-    check_hwmon_vid
-    check_submodule
-    install_dkms
-    install_modprobe_config
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    check_root
+    if is_gt_hardware; then
+        GT_BACKEND=1
+        log "GT hardware detected; skipping it87 installation"
+    else
+        check_dependencies
+        warn_amd_chip_compatibility
+        check_hwmon_vid
+        check_submodule
+        install_dkms
+        install_modprobe_config
+    fi
+    install_services
+    print_status
 fi
-install_services
-print_status
