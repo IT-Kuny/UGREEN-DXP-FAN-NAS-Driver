@@ -25,9 +25,9 @@ What's currently being partially supported:
 
 - DXP6800Pro (See [Issue](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/6) #6 for now)
 
-What's **not supported** by this driver (investigation completed — [Issue #18](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18)):
+What's conditionally supported:
 
-- DXP2800 GT / DXP4800 GT — these **GT** models use an **AMD Ryzen Embedded R2514** CPU (unlike the Intel N100 in the DXP2800) and a **different Super I/O chip** (a **National Semiconductor / Texas Instruments** chip with ID `0x2011` at I/O port `0x2e`).  The `it87` driver does **not** apply to this hardware. Diagnostic details and findings are documented in the closed [Issue #18](https://github.com/IT-Kuny/UGREEN-DXP-FAN-NAS-Driver/issues/18).
+- DXP2800 GT / DXP4800 GT — these **GT** models use an **AMD Ryzen Embedded R2514** CPU and a **National Semiconductor / Texas Instruments** Super I/O chip (ID `0x2011` at I/O port `0x2e`). The `it87` driver does **not** apply; fan curves are supported when the separate `ug201x_full` driver provides `/proc/it86/temp` and `/proc/it86/fan`. That kernel driver is not included or installed by this project.
 
 > [!NOTE]
 > **AMD-based models (DXP2800 GT / DXP4800 GT):** On these, the LED MCU sits on a
@@ -43,6 +43,15 @@ What's **not supported** by this driver (investigation completed — [Issue #18]
 > the modules for your kernel. See also
 > [miskcoo/ugreen_leds_controller#100](https://github.com/miskcoo/ugreen_leds_controller/pull/100)
 > for LED MCU framing details on these models.
+>
+> **DXP2800 GT fan control:** Build and load the separate `ug201x_full.ko` kernel
+> module for your running kernel before starting `ugreen-fan-control.service`.
+> For automatic loading at boot, install it under `/lib/modules/$(uname -r)`,
+> run `depmod -a`, then add `ug201x_full` to `/etc/modules-load.d/`. The daemon
+> reads CPU and board temperatures from `/proc/it86/temp`, controls the CPU fan
+> with `cpu N`, and controls the system fan with `set N`; both targets use the
+> configured CPU/disk curves and range from 0 to 255. The system fan follows the
+> hotter of the board and available disk temperatures.
 
 ---
 

@@ -27,6 +27,10 @@ log_test() {
     echo "[TEST] $*"
 }
 
+# Source installer functions without running the installation.
+# shellcheck source=/dev/null
+source "$INSTALL_SCRIPT"
+
 # ---------------------------------------------------------------------------
 # Extract and wrap get_cpu_vendor() for testing with a mock cpuinfo file.
 # The function reads /proc/cpuinfo; we override that path via a helper.
@@ -117,6 +121,38 @@ if [ "$result" = "unknown" ]; then
 else
     fail "Empty cpuinfo → expected unknown, got '$result'"
 fi
+
+# ---------------------------------------------------------------------------
+# 5. GT model detection does not require /proc/it86
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== GT Model Detection ==="
+
+GT_PRODUCT_NAME=$(mktemp)
+GT_PROC_DIR="$GT_PRODUCT_NAME.proc"
+for model in "DXP2800 GT" "DXP4800 GT" "dxp2800 gt"; do
+    printf '%s\n' "$model" > "$GT_PRODUCT_NAME"
+    if is_gt_hardware "$GT_PRODUCT_NAME" "$GT_PROC_DIR"; then
+        pass "$model detected from DMI product name"
+    else
+        fail "$model was not detected from DMI product name"
+    fi
+done
+
+printf '%s\n' "DXP2800" > "$GT_PRODUCT_NAME"
+if is_gt_hardware "$GT_PRODUCT_NAME" "$GT_PROC_DIR"; then
+    fail "non-GT DXP2800 product name is not classified as GT"
+else
+    pass "non-GT DXP2800 product name is not classified as GT"
+fi
+mkdir -p "$GT_PROC_DIR"
+if is_gt_hardware "$GT_PRODUCT_NAME" "$GT_PROC_DIR"; then
+    pass "/proc/it86 remains an independent GT detection fallback"
+else
+    fail "/proc/it86 should remain a GT detection fallback"
+fi
+rm -f "$GT_PRODUCT_NAME"
+rmdir "$GT_PROC_DIR"
 
 # ---------------------------------------------------------------------------
 # 5. Service file uses runtime CPU detection (not hardcoded)
