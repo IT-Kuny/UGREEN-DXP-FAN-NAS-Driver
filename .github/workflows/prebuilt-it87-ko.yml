@@ -60,69 +60,69 @@ jobs:
           validate_headers_url() {
             local url="$1"
             python3 - "$url" <<'PY'
-import ipaddress
-import socket
-import sys
-import urllib.parse
-
-url = sys.argv[1]
-parsed = urllib.parse.urlparse(url)
-if parsed.scheme != "https":
-    raise SystemExit("Only https:// URLs are allowed for kernel_headers_url.")
-if not parsed.hostname:
-    raise SystemExit("Could not parse host from kernel_headers_url.")
-host = parsed.hostname
-port = parsed.port or 443
-if host == "localhost" or host.endswith(".localhost"):
-    raise SystemExit("Localhost targets are not allowed for kernel_headers_url.")
-
-try:
-    infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-except socket.gaierror as exc:
-    raise SystemExit(f"Could not resolve host '{host}': {exc}") from exc
-
-ips = {info[4][0] for info in infos}
-if not ips:
-    raise SystemExit(f"Could not resolve host '{host}'.")
-global_ips = []
-for ip in ips:
-    addr = ipaddress.ip_address(ip)
-    if addr.is_global:
-        global_ips.append(ip)
-if not global_ips:
-    raise SystemExit(f"kernel_headers_url resolved only to non-global addresses, rejecting.")
-print(f"{host}\t{port}\t{','.join(sorted(global_ips))}")
-PY
+          import ipaddress
+          import socket
+          import sys
+          import urllib.parse
+          
+          url = sys.argv[1]
+          parsed = urllib.parse.urlparse(url)
+          if parsed.scheme != "https":
+              raise SystemExit("Only https:// URLs are allowed for kernel_headers_url.")
+          if not parsed.hostname:
+              raise SystemExit("Could not parse host from kernel_headers_url.")
+          host = parsed.hostname
+          port = parsed.port or 443
+          if host == "localhost" or host.endswith(".localhost"):
+              raise SystemExit("Localhost targets are not allowed for kernel_headers_url.")
+          
+          try:
+              infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+          except socket.gaierror as exc:
+              raise SystemExit(f"Could not resolve host '{host}': {exc}") from exc
+          
+          ips = {info[4][0] for info in infos}
+          if not ips:
+              raise SystemExit(f"Could not resolve host '{host}'.")
+          global_ips = []
+          for ip in ips:
+              addr = ipaddress.ip_address(ip)
+              if addr.is_global:
+                  global_ips.append(ip)
+          if not global_ips:
+              raise SystemExit(f"kernel_headers_url resolved only to non-global addresses, rejecting.")
+          print(f"{host}\t{port}\t{','.join(sorted(global_ips))}")
+          PY
           }
 
           extract_archive_safely() {
             local archive="$1"
             local output_dir="$2"
             python3 - "$archive" "$output_dir" <<'PY'
-import pathlib
-import sys
-import tarfile
-
-archive = sys.argv[1]
-output_dir = sys.argv[2]
-try:
-    tf = tarfile.open(archive, "r:*")
-except tarfile.TarError as exc:
-    raise SystemExit(f"Unable to read tar archive '{archive}': {exc}") from exc
-
-safe_members = []
-with tf:
-    for member in tf.getmembers():
-        member_path = pathlib.PurePosixPath(member.name)
-        if member_path.is_absolute() or ".." in member_path.parts:
-            raise SystemExit(f"Unsafe archive entry path: {member.name}")
-        if member.issym() or member.islnk():
-            raise SystemExit(f"Link entries are not allowed in archive: {member.name}")
-        if not (member.isfile() or member.isdir()):
-            raise SystemExit(f"Unsupported archive entry type: {member.name}")
-        safe_members.append(member)
-    tf.extractall(path=output_dir, members=safe_members)
-PY
+          import pathlib
+          import sys
+          import tarfile
+          
+          archive = sys.argv[1]
+          output_dir = sys.argv[2]
+          try:
+              tf = tarfile.open(archive, "r:*")
+          except tarfile.TarError as exc:
+              raise SystemExit(f"Unable to read tar archive '{archive}': {exc}") from exc
+          
+          safe_members = []
+          with tf:
+              for member in tf.getmembers():
+                  member_path = pathlib.PurePosixPath(member.name)
+                  if member_path.is_absolute() or ".." in member_path.parts:
+                      raise SystemExit(f"Unsafe archive entry path: {member.name}")
+                  if member.issym() or member.islnk():
+                      raise SystemExit(f"Link entries are not allowed in archive: {member.name}")
+                  if not (member.isfile() or member.isdir()):
+                      raise SystemExit(f"Unsupported archive entry type: {member.name}")
+                  safe_members.append(member)
+              tf.extractall(path=output_dir, members=safe_members)
+          PY
           }
 
           IFS=$'\t' read -r RESOLVED_HOST RESOLVED_PORT RESOLVED_IPS <<< "$(validate_headers_url "$HEADERS_URL")"
